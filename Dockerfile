@@ -1,7 +1,4 @@
-FROM eclipse-temurin:8-jre-alpine as base8
+ARG JAVA_VERSION=21
+ARG MINECRAFT_VERSION=1.21.1
 
-FROM eclipse-temurin:17-jre-alpine as base17
-
-FROM eclipse-temurin:21-jre-alpine as base21
-
-
+FROM eclipse-temurin:${JAVA_VERSION}-jre AS base
