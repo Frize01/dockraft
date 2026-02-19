@@ -18,7 +18,6 @@ ENV MEMORY_MIN=1G \
 EXPOSE 25565/tcp
 USER mcuser
 
-
 # ============================================================
 # VANILLA
 # ============================================================
@@ -39,6 +38,25 @@ FROM base AS vanilla
 COPY --from=download-vanilla --chown=mcuser:mcuser /tmp/server.jar .
 CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
+# ============================================================
+# SNAPSHOT (même API que Vanilla, type "snapshot" dans le manifest)
+# ============================================================
+FROM alpine AS download-snapshot
+RUN apk add --no-cache curl jq
+ARG MC_VERSION=25w07a
+
+RUN MANIFEST_URL=$(curl -s https://launchermeta.mojang.com/mc/game/version_manifest_v2.json \
+        | jq -r --arg v "$MC_VERSION" '.versions[] | select(.id == $v) | .url') \
+    && if [ -z "$MANIFEST_URL" ] || [ "$MANIFEST_URL" = "null" ]; then \
+        echo "❌ Snapshot $MC_VERSION introuvable !" && exit 1; \
+    fi \
+    && SERVER_URL=$(curl -s "$MANIFEST_URL" \
+        | jq -r '.downloads.server.url') \
+    && curl -o /tmp/server.jar "$SERVER_URL"
+
+FROM base AS snapshot
+COPY --from=download-snapshot --chown=mcuser:mcuser /tmp/server.jar .
+CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
 # ============================================================
 # PAPER

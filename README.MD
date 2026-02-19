@@ -9,6 +9,8 @@
 | 1.21+ | 21 |
 
 
+⚠️ Note Snapshot : le MC_VERSION doit être le nom exact du snapshot, ex: 25w07a. Tu peux trouver le dernier sur launcher.mojang.com dans la clé latest.snapshot.
+
 
 ## 🎯 Objectif final
 Un serveur Minecraft dans Docker, configurable via variables d'env
