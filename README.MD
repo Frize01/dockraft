@@ -1,5 +1,15 @@
 # Dockraft
 
+## ⚙️ Compatibilité Java
+
+| Minecraft Version | JAVA_VERSION |
+|---|---|
+| 1.8 - 1.16.5 | 8 |
+| 1.17 - 1.20.x | 17 |
+| 1.21+ | 21 |
+
+
+
 ## 🎯 Objectif final
 Un serveur Minecraft dans Docker, configurable via variables d'env
 
