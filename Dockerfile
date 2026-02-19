@@ -23,7 +23,7 @@ USER mcuser
 # ============================================================
 FROM alpine AS download-vanilla
 RUN apk add --no-cache curl jq
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN MANIFEST_URL=$(curl -s https://launchermeta.mojang.com/mc/game/version_manifest_v2.json \
         | jq -r --arg v "$MC_VERSION" '.versions[] | select(.id == $v) | .url') \
@@ -63,7 +63,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY
 # ============================================================
 FROM alpine AS download-paper
 RUN apk add --no-cache curl jq
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds" \
         | jq -r '.builds[-1].build') \
@@ -77,13 +77,12 @@ FROM base AS paper
 COPY --from=download-paper --chown=mcuser:mcuser /tmp/server.jar .
 CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
-
 # ============================================================
 # FABRIC
 # ============================================================
 FROM alpine AS download-fabric
 RUN apk add --no-cache curl jq
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN LOADER=$(curl -s "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}" \
         | jq -r '.[0].loader.version') \
@@ -99,13 +98,12 @@ FROM base AS fabric
 COPY --from=download-fabric --chown=mcuser:mcuser /tmp/server.jar .
 CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
-
 # ============================================================
 # FORGE
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-forge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN FORGE_VERSION=$(curl -s "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json" \
         | jq -r --arg v "$MC_VERSION" '.promos[$v + "-recommended"] // .promos[$v + "-latest"]') \
@@ -121,15 +119,20 @@ RUN FORGE_VERSION=$(curl -s "https://files.minecraftforge.net/net/minecraftforge
 
 FROM base AS forge
 COPY --from=download-forge --chown=mcuser:mcuser /tmp/forge-server .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} @user_jvm_args.txt @libraries/net/minecraftforge/forge/unix_args.txt nogui'
-
+CMD sh -c 'echo "eula=${EULA}" > eula.txt \
+    && sed -i "s/-Xm[sx][^ ]*//" user_jvm_args.txt \
+    && echo "-Xms${MEMORY_MIN}" >> user_jvm_args.txt \
+    && echo "-Xmx${MEMORY_MAX}" >> user_jvm_args.txt \
+    && UNIX_ARGS=$(find libraries/net/minecraftforge/forge -name "unix_args.txt" | head -1) \
+    && if [ -z "$UNIX_ARGS" ]; then echo "❌ unix_args.txt introuvable" && exit 1; fi \
+    && java @user_jvm_args.txt @${UNIX_ARGS} nogui'
 
 # ============================================================
 # NEOFORGE
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-neoforge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 # NeoForge version = MC_VERSION sans le "1." devant (ex: 1.21.1 -> 21.1.x)
 RUN NEO_MC=$(echo "$MC_VERSION" | sed 's/^1\.//') \
@@ -149,15 +152,20 @@ RUN NEO_MC=$(echo "$MC_VERSION" | sed 's/^1\.//') \
 
 FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} @user_jvm_args.txt @libraries/net/neoforged/neoforge/unix_args.txt nogui'
-
+CMD sh -c 'echo "eula=${EULA}" > eula.txt \
+    && sed -i "s/-Xm[sx][^ ]*//" user_jvm_args.txt \
+    && echo "-Xms${MEMORY_MIN}" >> user_jvm_args.txt \
+    && echo "-Xmx${MEMORY_MAX}" >> user_jvm_args.txt \
+    && UNIX_ARGS=$(find libraries/net/neoforged/neoforge -name "unix_args.txt" | head -1) \
+    && if [ -z "$UNIX_ARGS" ]; then echo "❌ unix_args.txt introuvable" && exit 1; fi \
+    && java @user_jvm_args.txt @${UNIX_ARGS} nogui'
 
 # ============================================================
 # SPIGOT
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jdk AS download-spigot
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN mkdir -p /tmp/spigot-build \
     && cd /tmp/spigot-build \
