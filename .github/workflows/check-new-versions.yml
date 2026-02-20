@@ -129,28 +129,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # ============================================
-      # PULL REQUEST (Pour toute MAJ, mineure ou majeure)
-      # ============================================
-      - name: Create Pull Request
-        if: steps.check.outputs.update_type != 'none'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "🔄 Update versions.json"
-          title: "🔄 Update loaders (Minecraft ${{ steps.check.outputs.vanilla }})"
-          body: |
-            Des mises à jour ont été détectées et appliquées à `versions.json`.
-            
-            **Vanilla:** `${{ steps.check.outputs.vanilla }}`
-            **Grosse MAJ (Nouveaux):** ${{ steps.check.outputs.changes }}
-            **Updates Mineurs:** ${{ steps.check.outputs.minor_updates }}
-            
-            *📌 Validez cette PR pour indiquer que vos images Docker ont été mises à jour.*
-          branch: auto/version-update
-          labels: automated,versions
-
-      # ============================================
-      # NOTIFICATION DISCORD
+      # NOTIFICATION DISCORD (Exécutée AVANT la création de la PR)
       # ============================================
       - name: Notify Discord
         if: steps.check.outputs.update_type != 'none'
@@ -229,3 +208,24 @@ jobs:
           curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
+
+      # ============================================
+      # PULL REQUEST (Placée en tout dernier pour ne pas nettoyer le JSON trop tôt)
+      # ============================================
+      - name: Create Pull Request
+        if: steps.check.outputs.update_type != 'none'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "🔄 Update versions.json"
+          title: "🔄 Update loaders (Minecraft ${{ steps.check.outputs.vanilla }})"
+          body: |
+            Des mises à jour ont été détectées et appliquées à `versions.json`.
+            
+            **Vanilla:** `${{ steps.check.outputs.vanilla }}`
+            **Grosse MAJ (Nouveaux):** ${{ steps.check.outputs.changes }}
+            **Updates Mineurs:** ${{ steps.check.outputs.minor_updates }}
+            
+            *📌 Validez cette PR pour indiquer que vos images Docker ont été mises à jour.*
+          branch: auto/version-update
+          labels: automated,versions
