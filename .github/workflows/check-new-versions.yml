@@ -164,7 +164,7 @@ jobs:
             "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" 2>/dev/null || echo "{}")
           NEOFORGE=$(echo "$NEOFORGE_VERSIONS" | jq -r \
             --arg prefix "${MC_MINOR}.${MC_PATCH}." \
-            '[.versions[] | select(startswith($prefix))] | last // empty')
+            '[.versions[] | select(startswith($prefix))] | sort | last // empty')
 
           if [ -n "$NEOFORGE" ]; then
             if [ "$VANILLA_CHANGED" = true ]; then
@@ -300,7 +300,7 @@ jobs:
           branch: auto/version-update
           labels: automated,versions
 
-      # ============================================
+# ============================================
       # Discord Notification
       # ============================================
       - name: Notify Discord
@@ -315,51 +315,71 @@ jobs:
           LAGGING="${{ steps.check.outputs.lagging }}"
           MINOR="${{ steps.check.outputs.minor_updates }}"
 
+          # On lit les nouvelles versions, et on demande à Git les anciennes
           NEW_JSON=$(cat versions.json)
-          OLD_JSON='${{ steps.check.outputs.old_json }}'  # ← à ajouter en output
+          OLD_JSON=$(git show HEAD:versions.json 2>/dev/null || echo '{}')
 
+          DESC_UPDATED=""
+          DESC_LAGGING=""
+          DESC_MINOR=""
+
+          # 1. On traite Vanilla en premier s'il a changé
           if [ "$VANILLA_CHANGED" = "true" ]; then
-            TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
-            COLOR=16744448
-          else
-            TITLE="🔄 Update loaders Minecraft"
-            COLOR=3447003
+            DESC_UPDATED="• \`vanilla\` : \`${OLD_VANILLA}\` ➔ \`${VANILLA}\`\n"
           fi
 
-          FIELDS="[]"
-          for KEY in vanilla snapshot paper fabric forge neoforge spigot; do
+          # 2. On trie le reste dans les bonnes catégories
+          for KEY in paper fabric forge neoforge spigot snapshot; do
             NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // empty")
             OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // empty")
+            
+            # Sécurité au cas où l'ancienne version n'existe pas encore
+            [ -z "$OLD_V" ] && OLD_V="N/A"
 
-            # Déterminer le statut
             if echo ",$CHANGES," | grep -q ",$KEY,"; then
-              EMOJI="✅"
-              VALUE="\`${OLD_V}\` → \`${NEW_V}\`"
+              DESC_UPDATED="${DESC_UPDATED}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`\n"
             elif echo ",$LAGGING," | grep -q ",$KEY,"; then
-              EMOJI="⏳"
-              VALUE="En attente de \`${VANILLA}\`"
+              DESC_LAGGING="${DESC_LAGGING}• \`${KEY}\` : \`${OLD_V}\` *(attend ${VANILLA})*\n"
             elif echo ",$MINOR," | grep -q ",$KEY,"; then
-              EMOJI="🔧"
-              VALUE="\`${OLD_V}\` → \`${NEW_V}\`"
-            else
-              EMOJI="—"
-              VALUE="\`${NEW_V}\`"
+              DESC_MINOR="${DESC_MINOR}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`\n"
             fi
-
-            FIELD=$(jq -n \
-              --arg name "${EMOJI} ${KEY}" \
-              --arg value "$VALUE" \
-              '{name: $name, value: $value, inline: true}')
-            FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
           done
+
+          # 3. Construction des blocs (Fields) Discord
+          FIELDS="[]"
+
+          if [ -n "$DESC_UPDATED" ]; then
+            FIELD=$(jq -n --arg name "✅ Mis à jour" --arg value "$DESC_UPDATED" '{name: $name, value: $value, inline: false}')
+            FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
+          fi
+
+          DESCRIPTION=""
+          if [ -n "$DESC_LAGGING" ]; then
+            FIELD=$(jq -n --arg name "⏳ Pas encore sur ${VANILLA}" --arg value "$DESC_LAGGING" '{name: $name, value: $value, inline: false}')
+            FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
+            DESCRIPTION="Certains loaders ne supportent pas encore ${VANILLA}."
+          fi
+
+          if [ -n "$DESC_MINOR" ]; then
+            FIELD=$(jq -n --arg name "🔧 Updates mineurs" --arg value "$DESC_MINOR" '{name: $name, value: $value, inline: false}')
+            FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
+          fi
+
+          # 4. Envoi final au Webhook
+          if [ "$VANILLA_CHANGED" = "true" ]; then
+            TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} ➔ ${VANILLA}"
+            COLOR=3447003 # Bleu comme sur ton image
+          else
+            TITLE="🔄 Update des loaders (Version ${VANILLA})"
+            COLOR=10181046 # Gris/Violet pour les petites updates
+          fi
 
           PAYLOAD=$(jq -n \
             --arg title "$TITLE" \
+            --arg desc "$DESCRIPTION" \
             --argjson color "$COLOR" \
             --argjson fields "$FIELDS" \
-            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{embeds: [{title: $title, color: $color, fields: $fields,
-              footer: {text: "MC Version Tracker"}, timestamp: $ts}]}')
+            '{embeds: [{title: $title, description: $desc, color: $color, fields: $fields, footer: {text: "Minecraft Version Tracker • Re-check dans 6h"}}]}')
 
           curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
