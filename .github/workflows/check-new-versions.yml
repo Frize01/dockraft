@@ -338,6 +338,65 @@ jobs:
           echo "$VERSION_MAP"
           echo "============================"
 
+# ============================================
+# 2. Génératoin du résumé pour le PR et la notification
+# ============================================
+      - name: Generate Summary
+        if: steps.check.outputs.has_new == 'true'
+        run: |
+          VANILLA="${{ steps.check.outputs.vanilla }}"
+          OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
+          VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
+          LAGGING="${{ steps.check.outputs.lagging }}"
+          VERSION_MAP="${{ steps.check.outputs.version_map }}"
+
+          # En-tête
+          if [ "$VANILLA_CHANGED" = "true" ]; then
+            echo "# 🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# 🔧 Updates mineurs loaders" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Tableau des versions
+          echo "| Loader | Ancienne | Nouvelle | Statut |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|----------|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+
+            KEY=$(echo "$line" | awk -F: '{print $1}')
+            OLD_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $1}')
+            NEW_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $2}')
+
+            # Déterminer le statut
+            if echo ",${LAGGING}," | grep -q ",${KEY},"; then
+              STATUS="⏳ Attend ${VANILLA}"
+            elif [ "$OLD_V" = "$NEW_V" ]; then
+              STATUS="✅ Inchangé"
+            elif [ "$VANILLA_CHANGED" = "true" ] && [ "$KEY" != "snapshot" ]; then
+              STATUS="✅ Mis à jour"
+            else
+              STATUS="🔧 Update mineur"
+            fi
+
+            echo "| \`${KEY}\` | \`${OLD_V}\` | \`${NEW_V}\` | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$VERSION_MAP"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Alertes
+          if [ -n "$LAGGING" ]; then
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> Loaders en attente de **${VANILLA}** : \`${LAGGING}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "> Le workflow repassera dans 6h." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          echo "*Prochain check dans 6h • [Voir les PRs](/${{ github.repository }}/pulls)*" >> "$GITHUB_STEP_SUMMARY"
+
       # ============================================
       # Commit versions.json
       # ============================================
@@ -413,25 +472,21 @@ jobs:
           while IFS= read -r line; do
             [ -z "$line" ] && continue
 
-            KEY=$(echo "$line" | cut -d: -f1)
-            VERSIONS=$(echo "$line" | cut -d: -f2)
-            OLD_V=$(echo "$VERSIONS" | cut -d'→' -f1)
-            NEW_V=$(echo "$VERSIONS" | cut -d'→' -f2)
+            # Utiliser awk au lieu de cut pour le séparateur multi-byte →
+            KEY=$(echo "$line" | awk -F: '{print $1}')
+            OLD_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $1}')
+            NEW_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $2}')
 
-            # Mutuellement exclusif
             if echo ",${LAGGING}," | grep -q ",${KEY},"; then
-              # ⏳ En retard
               LAGGING_LINES="${LAGGING_LINES}• \`${KEY}\` : \`${OLD_V}\` *(attend \`${VANILLA}\`)*\n"
             elif [ "$VANILLA_CHANGED" = "true" ] && [ "$KEY" != "snapshot" ]; then
-              # ✅ Supporte la nouvelle MC
               UPDATED_LINES="${UPDATED_LINES}• \`${KEY}\` : \`${OLD_V}\` → \`${NEW_V}\`\n"
             else
-              # 🔧 Update mineur
               MINOR_LINES="${MINOR_LINES}• \`${KEY}\` : \`${OLD_V}\` → \`${NEW_V}\`\n"
             fi
           done <<< "$VERSION_MAP"
 
-          # Construire les fields Discord
+          # Construire les fields Discord avec de vrais retours à la ligne
           FIELDS="["
           FIRST=true
 
@@ -440,15 +495,19 @@ jobs:
             local value="$2"
             [ -z "$value" ] && return
             [ "$FIRST" = false ] && FIELDS="${FIELDS},"
-            # Échapper les guillemets dans value
-            value=$(echo "$value" | sed 's/"/\\"/g')
+            # Convertir les \n littéraux en vrais newlines pour Discord
+            value=$(printf '%b' "$value" | jq -Rs '.')
+            # jq -Rs ajoute des guillemets, on les retire car on les met nous-mêmes
+            value=${value#\"}
+            value=${value%\"}
+            name=$(echo "$name" | sed 's/"/\\"/g')
             FIELDS="${FIELDS}{\"name\":\"${name}\",\"value\":\"${value}\",\"inline\":false}"
             FIRST=false
           }
 
-          add_field "✅ Mis à jour"                          "$(printf "%b" "$UPDATED_LINES")"
-          add_field "⏳ Pas encore sur \`${VANILLA}\`"       "$(printf "%b" "$LAGGING_LINES")"
-          add_field "🔧 Updates mineurs"                     "$(printf "%b" "$MINOR_LINES")"
+          add_field "✅ Mis à jour" "$(printf '%b' "$UPDATED_LINES")"
+          add_field "⏳ Pas encore sur ${VANILLA}" "$(printf '%b' "$LAGGING_LINES")"
+          add_field "🔧 Updates mineurs" "$(printf '%b' "$MINOR_LINES")"
 
           FIELDS="${FIELDS}]"
 
@@ -456,11 +515,11 @@ jobs:
           if [ "$VANILLA_CHANGED" = "true" ] && [ -n "$LAGGING" ]; then
             COLOR=16744448
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
-            DESC="Certains loaders ne supportent pas encore \`${VANILLA}\`."
+            DESC="Certains loaders ne supportent pas encore ${VANILLA}."
           elif [ "$VANILLA_CHANGED" = "true" ]; then
             COLOR=5814783
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
-            DESC="✅ Tous les loaders supportent déjà \`${VANILLA}\` !"
+            DESC="Tous les loaders supportent déjà ${VANILLA} !"
           else
             COLOR=3447003
             TITLE="🔧 Updates mineurs loaders"
@@ -469,22 +528,29 @@ jobs:
 
           PR_URL="${{ github.server_url }}/${{ github.repository }}/pulls"
 
+          # Construire le JSON proprement avec jq
+          PAYLOAD=$(jq -n \
+            --arg title "$TITLE" \
+            --arg desc "$DESC" \
+            --argjson color "$COLOR" \
+            --arg url "$PR_URL" \
+            --argjson fields "$FIELDS" \
+            --arg footer "Minecraft Version Tracker • Re-check dans 6h" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: $color,
+                url: $url,
+                fields: $fields,
+                footer: { text: $footer },
+                timestamp: $ts
+              }]
+            }')
+
           curl -fsSL -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
-            -d @- <<PAYLOAD
-          {
-            "embeds": [{
-              "title": "${TITLE}",
-              "description": "${DESC}",
-              "color": ${COLOR},
-              "url": "${PR_URL}",
-              "fields": ${FIELDS},
-              "footer": {
-                "text": "Minecraft Version Tracker • Re-check dans 6h"
-              },
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            }]
-          }
-          PAYLOAD
+            -d "$PAYLOAD"
 
           echo "✅ Notification Discord envoyée"
