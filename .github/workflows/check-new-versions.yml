@@ -308,14 +308,15 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "Pas de webhook configuré, skip."
-            exit 0
-          fi
-
           VANILLA="${{ steps.check.outputs.vanilla }}"
           OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
+          CHANGES="${{ steps.check.outputs.changes }}"
+          LAGGING="${{ steps.check.outputs.lagging }}"
+          MINOR="${{ steps.check.outputs.minor_updates }}"
+
+          NEW_JSON=$(cat versions.json)
+          OLD_JSON='${{ steps.check.outputs.old_json }}'  # ← à ajouter en output
 
           if [ "$VANILLA_CHANGED" = "true" ]; then
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
@@ -325,26 +326,41 @@ jobs:
             COLOR=3447003
           fi
 
-          # Construire les fields depuis versions.json
-          FIELDS=$(jq '[to_entries[] | {name: .key, value: ("`" + .value + "`"), inline: true}]' versions.json)
+          FIELDS="[]"
+          for KEY in vanilla snapshot paper fabric forge neoforge spigot; do
+            NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // empty")
+            OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // empty")
+
+            # Déterminer le statut
+            if echo ",$CHANGES," | grep -q ",$KEY,"; then
+              EMOJI="✅"
+              VALUE="\`${OLD_V}\` → \`${NEW_V}\`"
+            elif echo ",$LAGGING," | grep -q ",$KEY,"; then
+              EMOJI="⏳"
+              VALUE="En attente de \`${VANILLA}\`"
+            elif echo ",$MINOR," | grep -q ",$KEY,"; then
+              EMOJI="🔧"
+              VALUE="\`${OLD_V}\` → \`${NEW_V}\`"
+            else
+              EMOJI="—"
+              VALUE="\`${NEW_V}\`"
+            fi
+
+            FIELD=$(jq -n \
+              --arg name "${EMOJI} ${KEY}" \
+              --arg value "$VALUE" \
+              '{name: $name, value: $value, inline: true}')
+            FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
+          done
 
           PAYLOAD=$(jq -n \
             --arg title "$TITLE" \
             --argjson color "$COLOR" \
             --argjson fields "$FIELDS" \
             --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{
-              embeds: [{
-                title: $title,
-                color: $color,
-                fields: $fields,
-                footer: {text: "MC Version Tracker"},
-                timestamp: $ts
-              }]
-            }')
+            '{embeds: [{title: $title, color: $color, fields: $fields,
+              footer: {text: "MC Version Tracker"}, timestamp: $ts}]}')
 
           curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
-
-          echo "✅ Notification Discord envoyée"
