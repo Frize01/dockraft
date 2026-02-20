@@ -315,17 +315,19 @@ jobs:
           LAGGING="${{ steps.check.outputs.lagging }}"
           MINOR="${{ steps.check.outputs.minor_updates }}"
 
-          # On lit les nouvelles versions, et on demande à Git les anciennes
           NEW_JSON=$(cat versions.json)
           OLD_JSON=$(git show HEAD:versions.json 2>/dev/null || echo '{}')
 
           DESC_UPDATED=""
           DESC_LAGGING=""
           DESC_MINOR=""
+          
+          # 💡 L'astuce magique : un vrai saut de ligne formaté pour bash
+          NL=$'\n'
 
           # 1. On traite Vanilla en premier s'il a changé
           if [ "$VANILLA_CHANGED" = "true" ]; then
-            DESC_UPDATED="• \`vanilla\` : \`${OLD_VANILLA}\` ➔ \`${VANILLA}\`\n"
+            DESC_UPDATED="• \`vanilla\` : \`${OLD_VANILLA}\` ➔ \`${VANILLA}\`${NL}"
           fi
 
           # 2. On trie le reste dans les bonnes catégories
@@ -333,15 +335,15 @@ jobs:
             NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // empty")
             OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // empty")
             
-            # Sécurité au cas où l'ancienne version n'existe pas encore
             [ -z "$OLD_V" ] && OLD_V="N/A"
 
+            # On remplace les \n par la variable $NL
             if echo ",$CHANGES," | grep -q ",$KEY,"; then
-              DESC_UPDATED="${DESC_UPDATED}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`\n"
+              DESC_UPDATED="${DESC_UPDATED}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`${NL}"
             elif echo ",$LAGGING," | grep -q ",$KEY,"; then
-              DESC_LAGGING="${DESC_LAGGING}• \`${KEY}\` : \`${OLD_V}\` *(attend ${VANILLA})*\n"
+              DESC_LAGGING="${DESC_LAGGING}• \`${KEY}\` : \`${OLD_V}\` *(attend ${VANILLA})*${NL}"
             elif echo ",$MINOR," | grep -q ",$KEY,"; then
-              DESC_MINOR="${DESC_MINOR}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`\n"
+              DESC_MINOR="${DESC_MINOR}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`${NL}"
             fi
           done
 
@@ -368,10 +370,10 @@ jobs:
           # 4. Envoi final au Webhook
           if [ "$VANILLA_CHANGED" = "true" ]; then
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} ➔ ${VANILLA}"
-            COLOR=3447003 # Bleu comme sur ton image
+            COLOR=3447003
           else
             TITLE="🔄 Update des loaders (Version ${VANILLA})"
-            COLOR=10181046 # Gris/Violet pour les petites updates
+            COLOR=10181046
           fi
 
           PAYLOAD=$(jq -n \
