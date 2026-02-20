@@ -31,7 +31,7 @@ jobs:
 
           OLD_JSON=$(cat versions.json)
 
-          # 💡 NOUVELLE LOGIQUE : On ne déclenche et n'enregistre que les VRAIES différences
+          # Filtre strict : Ne s'active que s'il y a une VRAIE différence
           check_status() {
             local key="$1"
             local new_val="$2"
@@ -129,13 +129,13 @@ jobs:
           echo "::group::Checking NeoForge"
           NEOFORGE=""
           
-          # On extrait "21" de "1.21.x"
+          # Extraction de la branche (ex: 21 pour 1.21.x)
           MC_PARTS=(${VANILLA//./ })
           MC_MINOR="${MC_PARTS[1]:-0}"
 
           NEOFORGE_VERSIONS=$(curl -fsSL "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" 2>/dev/null || echo "{}")
           
-          # Filtre avancé : Bonne branche ET uniquement des chiffres (pas de beta/snapshot)
+          # Ne prend que les versions stables (pas de lettres) correspondantes à la branche
           NEOFORGE=$(echo "$NEOFORGE_VERSIONS" | jq -r \
             --arg major "$MC_MINOR" \
             '[.versions[]? | select(startswith($major + ".") and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(split(".") | map(tonumber)) | last // empty')
@@ -152,7 +152,6 @@ jobs:
           SPIGOT_REF=$(echo "$SPIGOT_INFO" | jq -r '.refs?.Spigot // empty')
 
           if [ -n "$SPIGOT_REF" ]; then
-            # Ajoute le hash de commit pour détecter les correctifs
             SPIGOT="${VANILLA}-$(echo "$SPIGOT_REF" | cut -c1-7)"
           fi
 
@@ -160,35 +159,12 @@ jobs:
           echo "::endgroup::"
 
           # ============================================
-          # 7. Nettoyage des virgules
+          # 7. Outputs finaux
           # ============================================
           CHANGES=$(echo "$CHANGES" | sed 's/^,//')
           LAGGING=$(echo "$LAGGING" | sed 's/^,//')
           MINOR_UPDATES=$(echo "$MINOR_UPDATES" | sed 's/^,//')
 
-          # ============================================
-          # 8. Résumé console
-          # ============================================
-          echo ""
-          echo "========================================="
-          echo "  RÉSUMÉ"
-          echo "========================================="
-          echo "Vanilla       : ${VANILLA} (changed: ${VANILLA_CHANGED})"
-          echo "Snapshot      : ${SNAPSHOT}"
-          echo "Paper         : ${PAPER:-❌}"
-          echo "Fabric        : ${FABRIC:-❌}"
-          echo "Forge         : ${FORGE:-❌}"
-          echo "NeoForge      : ${NEOFORGE:-❌}"
-          echo "Spigot        : ${SPIGOT:-❌}"
-          echo "-----------------------------------------"
-          echo "Changes       : ${CHANGES:-aucun}"
-          echo "Lagging       : ${LAGGING:-aucun}"
-          echo "Minor updates : ${MINOR_UPDATES:-aucun}"
-          echo "========================================="
-
-          # ============================================
-          # 9. Outputs
-          # ============================================
           {
             echo "has_new=${HAS_NEW}"
             echo "vanilla=${VANILLA}"
@@ -218,17 +194,10 @@ jobs:
 
           for KEY in $KEYS; do
             NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // \"—\"")
-
-            if echo ",${{ steps.check.outputs.changes }}," | grep -q ",${KEY},"; then
-              STATUS="✅ Mis à jour"
-            elif echo ",${{ steps.check.outputs.lagging }}," | grep -q ",${KEY},"; then
-              STATUS="⏳ Attend ${VANILLA}"
-            elif echo ",${{ steps.check.outputs.minor_updates }}," | grep -q ",${KEY},"; then
-              STATUS="🔧 Update mineur"
-            else
-              STATUS="— Inchangé"
-            fi
-
+            if echo ",${{ steps.check.outputs.changes }}," | grep -q ",${KEY},"; then STATUS="✅ Mis à jour"
+            elif echo ",${{ steps.check.outputs.lagging }}," | grep -q ",${KEY},"; then STATUS="⏳ Attend ${VANILLA}"
+            elif echo ",${{ steps.check.outputs.minor_updates }}," | grep -q ",${KEY},"; then STATUS="🔧 Update mineur"
+            else STATUS="— Inchangé"; fi
             echo "| ${KEY} | \`${NEW_V}\` | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
           done
 
@@ -244,11 +213,7 @@ jobs:
           title: "🔄 Minecraft versions update"
           body: |
             Mise à jour automatique des versions Minecraft.
-
             **Vanilla:** `${{ steps.check.outputs.vanilla }}`
-            **Changes:** ${{ steps.check.outputs.changes }}
-            **Lagging:** ${{ steps.check.outputs.lagging }}
-            **Minor:** ${{ steps.check.outputs.minor_updates }}
           branch: auto/version-update
           labels: automated,versions
 
@@ -270,55 +235,52 @@ jobs:
           NEW_JSON=$(cat versions.json)
           OLD_JSON=$(git show HEAD:versions.json 2>/dev/null || echo '{}')
 
-          DESC_UPDATED=""
-          DESC_LAGGING=""
-          DESC_MINOR=""
-          
-          # Variable pour les sauts de ligne dans Discord
-          NL=$'\n'
+          # Utilisation de tableaux Bash pour contourner les bugs de \n
+          UPDATED_ARR=()
+          LAGGING_ARR=()
+          MINOR_ARR=()
 
-          # 1. On traite Vanilla en premier s'il a changé
           if [ "$VANILLA_CHANGED" = "true" ]; then
-            DESC_UPDATED="• \`vanilla\` : \`${OLD_VANILLA}\` ➔ \`${VANILLA}\`${NL}"
+            UPDATED_ARR+=("• \`vanilla\` : \`${OLD_VANILLA}\` ➔ \`${VANILLA}\`")
           fi
 
-          # 2. On trie le reste dans les bonnes catégories
           for KEY in paper fabric forge neoforge spigot snapshot; do
             NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // empty")
             OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // empty")
-            
             [ -z "$OLD_V" ] && OLD_V="N/A"
 
             if echo ",$CHANGES," | grep -q ",$KEY,"; then
-              DESC_UPDATED="${DESC_UPDATED}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`${NL}"
+              UPDATED_ARR+=("• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`")
             elif echo ",$LAGGING," | grep -q ",$KEY,"; then
-              DESC_LAGGING="${DESC_LAGGING}• \`${KEY}\` : \`${OLD_V}\` *(attend ${VANILLA})*${NL}"
+              LAGGING_ARR+=("• \`${KEY}\` : \`${OLD_V}\` *(attend ${VANILLA})*")
             elif echo ",$MINOR," | grep -q ",$KEY,"; then
-              DESC_MINOR="${DESC_MINOR}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`${NL}"
+              MINOR_ARR+=("• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`")
             fi
           done
 
-          # 3. Construction des blocs (Fields) Discord
           FIELDS="[]"
 
-          if [ -n "$DESC_UPDATED" ]; then
+          # Ajout des blocs conditionnels seulement s'il y a du contenu
+          if [ ${#UPDATED_ARR[@]} -gt 0 ]; then
+            DESC_UPDATED=$(printf "%s\n" "${UPDATED_ARR[@]}")
             FIELD=$(jq -n --arg name "✅ Mis à jour" --arg value "$DESC_UPDATED" '{name: $name, value: $value, inline: false}')
             FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
           fi
 
           DESCRIPTION=""
-          if [ -n "$DESC_LAGGING" ]; then
+          if [ ${#LAGGING_ARR[@]} -gt 0 ]; then
+            DESC_LAGGING=$(printf "%s\n" "${LAGGING_ARR[@]}")
             FIELD=$(jq -n --arg name "⏳ Pas encore sur ${VANILLA}" --arg value "$DESC_LAGGING" '{name: $name, value: $value, inline: false}')
             FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
             DESCRIPTION="Certains loaders ne supportent pas encore ${VANILLA}."
           fi
 
-          if [ -n "$DESC_MINOR" ]; then
+          if [ ${#MINOR_ARR[@]} -gt 0 ]; then
+            DESC_MINOR=$(printf "%s\n" "${MINOR_ARR[@]}")
             FIELD=$(jq -n --arg name "🔧 Updates mineurs" --arg value "$DESC_MINOR" '{name: $name, value: $value, inline: false}')
             FIELDS=$(echo "$FIELDS" | jq --argjson f "$FIELD" '. + [$f]')
           fi
 
-          # 4. Envoi final au Webhook
           if [ "$VANILLA_CHANGED" = "true" ]; then
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} ➔ ${VANILLA}"
             COLOR=3447003
