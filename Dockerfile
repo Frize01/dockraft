@@ -16,7 +16,12 @@ ENV MEMORY_MIN=1G \
     EULA=false
 
 EXPOSE 25565/tcp
+
+# Copier l'entrypoint AVANT de passer en mcuser
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
+
 USER mcuser
+CMD ["/entrypoint.sh"]
 
 # ============================================================
 # VANILLA
@@ -24,7 +29,7 @@ USER mcuser
 FROM alpine:3.20 AS download-vanilla
 RUN apk add --no-cache curl jq bash
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN set -euo pipefail; \
     echo ">>> Checking Mojang manifest for $MC_VERSION"; \
@@ -41,8 +46,6 @@ RUN set -euo pipefail; \
 
 FROM base AS vanilla
 COPY --from=download-vanilla --chown=mcuser:mcuser /tmp/server.jar .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt \
- && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
 # ============================================================
 # SNAPSHOT
@@ -50,7 +53,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt \
 FROM alpine:3.20 AS download-snapshot
 RUN apk add --no-cache curl jq bash
 
-ARG MC_VERSION="26.1-snapshot-9"
+ARG MC_VERSION=25w21a
 
 RUN set -euo pipefail; \
     echo ">>> Checking Mojang manifest for snapshot $MC_VERSION"; \
@@ -68,8 +71,6 @@ RUN set -euo pipefail; \
 
 FROM base AS snapshot
 COPY --from=download-snapshot --chown=mcuser:mcuser /tmp/server.jar .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt \
- && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
 # ============================================================
 # PAPER
@@ -77,24 +78,22 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt \
 FROM alpine:3.20 AS download-paper
 RUN apk add --no-cache curl jq bash
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN set -euo pipefail; \
     echo ">>> Checking Paper API for $MC_VERSION"; \
     BUILDS_JSON=$(curl -fsSL "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds" || true); \
     BUILD=$(echo "$BUILDS_JSON" | jq -r '.builds[-1].build // empty'); \
-    [ -n "$BUILD" ] || { echo "❌ Aucun build Paper"; exit 1; }; \
+    [ -n "$BUILD" ] || { echo "❌ Aucun build Paper pour $MC_VERSION"; exit 1; }; \
     curl -fLo /tmp/server.jar \
         "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds/${BUILD}/downloads/paper-${MC_VERSION}-${BUILD}.jar"; \
-    test -s /tmp/server.jar || exit 1; \
+    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; \
     SIZE=$(stat -c%s /tmp/server.jar); \
-    [ "$SIZE" -gt 10000000 ] || exit 1; \
+    [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
     echo ">>> Paper OK ($SIZE bytes)"
 
 FROM base AS paper
 COPY --from=download-paper --chown=mcuser:mcuser /tmp/server.jar .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt \
- && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
 # ============================================================
 # FABRIC
@@ -102,7 +101,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt \
 FROM alpine:3.20 AS download-fabric
 RUN apk add --no-cache curl jq
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN set -eu; \
     echo ">>> Checking Fabric for $MC_VERSION"; \
@@ -120,7 +119,6 @@ RUN set -eu; \
 
 FROM base AS fabric
 COPY --from=download-fabric --chown=mcuser:mcuser /tmp/server.jar .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
 
 # ============================================================
 # FORGE
@@ -128,7 +126,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-forge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 SHELL ["/bin/bash", "-c"]
 RUN set -euo pipefail; \
@@ -147,13 +145,6 @@ RUN set -euo pipefail; \
 
 FROM base AS forge
 COPY --from=download-forge --chown=mcuser:mcuser /tmp/forge-server .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt \
-    && sed -i "s/-Xm[sx][^ ]*//" user_jvm_args.txt \
-    && echo "-Xms${MEMORY_MIN}" >> user_jvm_args.txt \
-    && echo "-Xmx${MEMORY_MAX}" >> user_jvm_args.txt \
-    && UNIX_ARGS=$(find libraries/net/minecraftforge/forge -name "unix_args.txt" | head -1) \
-    && if [ -z "$UNIX_ARGS" ]; then echo "❌ unix_args.txt introuvable" && exit 1; fi \
-    && java @user_jvm_args.txt @${UNIX_ARGS} nogui'
 
 # ============================================================
 # NEOFORGE
@@ -161,7 +152,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt \
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-neoforge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 SHELL ["/bin/bash", "-c"]
 RUN set -euo pipefail; \
@@ -182,13 +173,6 @@ RUN set -euo pipefail; \
 
 FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt \
-    && sed -i "s/-Xm[sx][^ ]*//" user_jvm_args.txt \
-    && echo "-Xms${MEMORY_MIN}" >> user_jvm_args.txt \
-    && echo "-Xmx${MEMORY_MAX}" >> user_jvm_args.txt \
-    && UNIX_ARGS=$(find libraries/net/neoforged/neoforge -name "unix_args.txt" | head -1) \
-    && if [ -z "$UNIX_ARGS" ]; then echo "❌ unix_args.txt introuvable" && exit 1; fi \
-    && java @user_jvm_args.txt @${UNIX_ARGS} nogui'
 
 # ============================================================
 # SPIGOT
@@ -196,7 +180,7 @@ CMD sh -c 'echo "eula=${EULA}" > eula.txt \
 FROM eclipse-temurin:${JAVA_VERSION}-jdk AS download-spigot
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
-ARG MC_VERSION=1.21.11
+ARG MC_VERSION=1.21.1
 
 RUN mkdir -p /tmp/spigot-build \
     && cd /tmp/spigot-build \
@@ -206,7 +190,5 @@ RUN mkdir -p /tmp/spigot-build \
     && java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out \
     && mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar
 
-# ⚠️ Spigot nécessite JDK pour BuildTools, mais on repart sur base (JRE) pour le final
 FROM base AS spigot
 COPY --from=download-spigot --chown=mcuser:mcuser /tmp/spigot-out/server.jar .
-CMD sh -c 'echo "eula=${EULA}" > eula.txt && java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui'
