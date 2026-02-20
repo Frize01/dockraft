@@ -24,7 +24,6 @@ jobs:
             echo '{}' > versions.json
           fi
 
-          # Sauvegarder l'état AVANT les modifications
           cp versions.json versions.json.bak
 
           CHANGES=""
@@ -32,9 +31,6 @@ jobs:
           MINOR_UPDATES=""
           HAS_NEW=false
 
-          # ============================================
-          # Fonction compare (mutuellement exclusif)
-          # ============================================
           compare() {
             local key="$1"
             local new_val="$2"
@@ -120,7 +116,7 @@ jobs:
             | jq -r '.[0].version // empty')
 
           if [ -n "$FABRIC_GAME" ] && [ -n "$FABRIC_LOADER" ]; then
-            FABRIC="${VANILLA}-loader.${FABRIC_LOADER}"
+            FABRIC="${FABRIC_LOADER}"
             if [ "$VANILLA_CHANGED" = true ]; then
               CHANGES="${CHANGES}fabric,"
               echo "✅ Fabric supporte ${VANILLA} → loader ${FABRIC_LOADER}"
@@ -133,7 +129,7 @@ jobs:
             OLD_FABRIC_GAME=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/game" \
               | jq -r --arg v "$OLD_VANILLA" '.[] | select(.version == $v) | .version // empty')
             if [ -n "$OLD_FABRIC_GAME" ]; then
-              FABRIC="${OLD_VANILLA}-loader.${FABRIC_LOADER}"
+              FABRIC="${FABRIC_LOADER}"
               echo "⏳ Fabric pas encore sur ${VANILLA}, reste sur ${OLD_VANILLA}"
             else
               FABRIC=$(jq -r '.fabric // empty' versions.json.bak)
@@ -192,8 +188,6 @@ jobs:
           echo "::group::Checking NeoForge"
           NEOFORGE=""
 
-          # NeoForge utilise le format MAJEUR.MINEUR.PATCH basé sur la MC
-          # Ex: MC 1.21.4 → NeoForge 21.4.x
           MC_MAJOR=$(echo "$VANILLA" | cut -d. -f2)
           MC_MINOR=$(echo "$VANILLA" | cut -d. -f3)
           MC_MINOR=${MC_MINOR:-0}
@@ -248,7 +242,7 @@ jobs:
           SPIGOT_REF=$(echo "$SPIGOT_DATA" | jq -r '.refs.BuildData // empty')
 
           if [ -n "$SPIGOT_REF" ]; then
-            SPIGOT="${VANILLA}-${SPIGOT_REF:0:7}"
+            SPIGOT="${VANILLA}"
             if [ "$VANILLA_CHANGED" = true ]; then
               CHANGES="${CHANGES}spigot,"
               echo "✅ Spigot supporte ${VANILLA} → ref ${SPIGOT_REF:0:7}"
@@ -262,7 +256,7 @@ jobs:
               "https://hub.spigotmc.org/versions/${OLD_VANILLA}.json" 2>/dev/null || echo "{}")
             OLD_SPIGOT_REF=$(echo "$OLD_SPIGOT_DATA" | jq -r '.refs.BuildData // empty')
             if [ -n "$OLD_SPIGOT_REF" ]; then
-              SPIGOT="${OLD_VANILLA}-${OLD_SPIGOT_REF:0:7}"
+              SPIGOT="${OLD_VANILLA}"
               echo "⏳ Spigot pas encore sur ${VANILLA}, reste sur ${OLD_VANILLA}"
             else
               SPIGOT=$(jq -r '.spigot // empty' versions.json.bak)
@@ -286,33 +280,7 @@ jobs:
           fi
 
           # ============================================
-          # 8. Construire le VERSION_MAP
-          # ============================================
-          build_map() {
-            local key="$1"
-            local new_val="$2"
-            local old_val
-            old_val=$(jq -r ".${key} // empty" versions.json.bak)
-            if [ -n "$new_val" ]; then
-              echo "${key}:${old_val:-inconnu}→${new_val}"
-            fi
-          }
-
-          VERSION_MAP=$(printf "%s\n" \
-            "$(build_map "vanilla"  "$VANILLA")" \
-            "$(build_map "snapshot" "$SNAPSHOT")" \
-            "$(build_map "paper"    "$PAPER")" \
-            "$(build_map "fabric"   "$FABRIC")" \
-            "$(build_map "forge"    "$FORGE")" \
-            "$(build_map "neoforge" "$NEOFORGE")" \
-            "$(build_map "spigot"   "$SPIGOT")" \
-          )
-
-          # Nettoyer les lignes vides
-          VERSION_MAP=$(echo "$VERSION_MAP" | grep -v '^$')
-
-          # ============================================
-          # 9. Outputs
+          # 8. Outputs (sans version_map)
           # ============================================
           {
             echo "has_new=${HAS_NEW}"
@@ -322,9 +290,6 @@ jobs:
             echo "changes=${CHANGES%,}"
             echo "lagging=${LAGGING%,}"
             echo "minor_updates=${MINOR_UPDATES%,}"
-            echo "version_map<<EOF"
-            echo "$VERSION_MAP"
-            echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           echo ""
@@ -334,13 +299,11 @@ jobs:
           echo "CHANGES       : ${CHANGES%,}"
           echo "LAGGING       : ${LAGGING%,}"
           echo "MINOR_UPDATES : ${MINOR_UPDATES%,}"
-          echo "VERSION_MAP   :"
-          echo "$VERSION_MAP"
           echo "============================"
 
-# ============================================
-# 2. Génératoin du résumé pour le PR et la notification
-# ============================================
+      # ============================================
+      # Génération du résumé pour le PR et la notification
+      # ============================================
       - name: Generate Summary
         if: steps.check.outputs.has_new == 'true'
         run: |
@@ -348,9 +311,11 @@ jobs:
           OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
           LAGGING="${{ steps.check.outputs.lagging }}"
-          VERSION_MAP="${{ steps.check.outputs.version_map }}"
 
-          # En-tête
+          OLD_JSON=$(cat versions.json.bak)
+          NEW_JSON=$(cat versions.json)
+          KEYS="vanilla snapshot paper fabric forge neoforge spigot"
+
           if [ "$VANILLA_CHANGED" = "true" ]; then
             echo "# 🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -358,19 +323,13 @@ jobs:
           fi
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
-
-          # Tableau des versions
           echo "| Loader | Ancienne | Nouvelle | Statut |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|----------|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          while IFS= read -r line; do
-            [ -z "$line" ] && continue
+          for KEY in $KEYS; do
+            OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // \"—\"")
+            NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // \"—\"")
 
-            KEY=$(echo "$line" | awk -F: '{print $1}')
-            OLD_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $1}')
-            NEW_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $2}')
-
-            # Déterminer le statut
             if echo ",${LAGGING}," | grep -q ",${KEY},"; then
               STATUS="⏳ Attend ${VANILLA}"
             elif [ "$OLD_V" = "$NEW_V" ]; then
@@ -382,11 +341,10 @@ jobs:
             fi
 
             echo "| \`${KEY}\` | \`${OLD_V}\` | \`${NEW_V}\` | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
-          done <<< "$VERSION_MAP"
+          done
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          # Alertes
           if [ -n "$LAGGING" ]; then
             echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
             echo "> Loaders en attente de **${VANILLA}** : \`${LAGGING}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -461,21 +419,22 @@ jobs:
           OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
           LAGGING="${{ steps.check.outputs.lagging }}"
-          VERSION_MAP="${{ steps.check.outputs.version_map }}"
 
-          # Initialiser les listes par catégorie
+          # Lire directement les fichiers JSON (pas d'output multiligne)
+          OLD_JSON=$(cat versions.json.bak)
+          NEW_JSON=$(cat versions.json)
+          KEYS="vanilla snapshot paper fabric forge neoforge spigot"
+
           UPDATED_LINES=""
           LAGGING_LINES=""
           MINOR_LINES=""
 
-          # Parser le VERSION_MAP ligne par ligne
-          while IFS= read -r line; do
-            [ -z "$line" ] && continue
+          for KEY in $KEYS; do
+            OLD_V=$(echo "$OLD_JSON" | jq -r ".${KEY} // empty")
+            NEW_V=$(echo "$NEW_JSON" | jq -r ".${KEY} // empty")
 
-            # Utiliser awk au lieu de cut pour le séparateur multi-byte →
-            KEY=$(echo "$line" | awk -F: '{print $1}')
-            OLD_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $1}')
-            NEW_V=$(echo "$line" | awk -F: '{print $2}' | awk -F'→' '{print $2}')
+            [ -z "$NEW_V" ] && continue
+            [ "$OLD_V" = "$NEW_V" ] && continue
 
             if echo ",${LAGGING}," | grep -q ",${KEY},"; then
               LAGGING_LINES="${LAGGING_LINES}• \`${KEY}\` : \`${OLD_V}\` *(attend \`${VANILLA}\`)*\n"
@@ -484,9 +443,9 @@ jobs:
             else
               MINOR_LINES="${MINOR_LINES}• \`${KEY}\` : \`${OLD_V}\` → \`${NEW_V}\`\n"
             fi
-          done <<< "$VERSION_MAP"
+          done
 
-          # Construire les fields Discord avec de vrais retours à la ligne
+          # Construire les fields Discord
           FIELDS="["
           FIRST=true
 
@@ -495,9 +454,7 @@ jobs:
             local value="$2"
             [ -z "$value" ] && return
             [ "$FIRST" = false ] && FIELDS="${FIELDS},"
-            # Convertir les \n littéraux en vrais newlines pour Discord
             value=$(printf '%b' "$value" | jq -Rs '.')
-            # jq -Rs ajoute des guillemets, on les retire car on les met nous-mêmes
             value=${value#\"}
             value=${value%\"}
             name=$(echo "$name" | sed 's/"/\\"/g')
@@ -511,7 +468,7 @@ jobs:
 
           FIELDS="${FIELDS}]"
 
-          # Couleur et titre selon le scénario
+          # Couleur et titre
           if [ "$VANILLA_CHANGED" = "true" ] && [ -n "$LAGGING" ]; then
             COLOR=16744448
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
@@ -528,7 +485,6 @@ jobs:
 
           PR_URL="${{ github.server_url }}/${{ github.repository }}/pulls"
 
-          # Construire le JSON proprement avec jq
           PAYLOAD=$(jq -n \
             --arg title "$TITLE" \
             --arg desc "$DESC" \
