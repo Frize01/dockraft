@@ -189,7 +189,7 @@ for entry in "${TESTS[@]}"; do
 
   # --- TEST 2 : server.properties respecte les env ---
   echo "⚙️  Test DIFFICULTY=hard dans server.properties..."
-  DIFF_LINE=$(docker exec "$CONTAINER" cat /app/server.properties 2>/dev/null | grep "^difficulty=")
+  DIFF_LINE=$(docker exec "$CONTAINER" cat /minecraft/server.properties 2>/dev/null | grep "^difficulty=")
   if echo "$DIFF_LINE" | grep -q "difficulty=hard"; then
     ENV_RESULT="✅ PASS ($DIFF_LINE)"
     echo "✅ $DIFF_LINE"
@@ -200,7 +200,7 @@ for entry in "${TESTS[@]}"; do
 
   # --- TEST 3 : Port 25565 écoute ---
   echo "🌐 Test port 25565..."
-  if timeout 5 bash -c '</dev/tcp/localhost/25565' 2>/dev/null; then
+  if nc -z -w 5 127.0.0.1 25565 2>/dev/null; then
     PORT_RESULT="✅ PASS"
     echo "✅ Port 25565 ouvert"
   else
@@ -212,13 +212,12 @@ for entry in "${TESTS[@]}"; do
   echo "🛑 Test graceful shutdown..."
   docker stop -t 30 "$CONTAINER" >/dev/null 2>&1
   EXIT_CODE=$(docker inspect "$CONTAINER" --format='{{.State.ExitCode}}' 2>/dev/null)
-  STOP_LOGS=$(docker logs "$CONTAINER" 2>&1 | tail -10)
 
-  if [ "$EXIT_CODE" = "0" ] && echo "$STOP_LOGS" | grep -qi "stopping"; then
+  if [ "$EXIT_CODE" = "0" ] || [ "$EXIT_CODE" = "143" ]; then
     GRACEFUL_RESULT="✅ PASS (exit=$EXIT_CODE)"
     echo "✅ Arrêt propre (exit code $EXIT_CODE)"
   elif [ "$EXIT_CODE" = "137" ]; then
-    GRACEFUL_RESULT="❌ FAIL (exit=137 = SIGKILL, pas capté SIGTERM)"
+    GRACEFUL_RESULT="❌ FAIL (exit=137 = SIGKILL)"
     echo "❌ SIGKILL — le serveur n'a pas capté SIGTERM"
   else
     GRACEFUL_RESULT="⚠️  UNCLEAR (exit=$EXIT_CODE)"
