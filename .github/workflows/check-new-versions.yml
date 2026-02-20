@@ -317,27 +317,16 @@ jobs:
           OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
 
-          # Lire versions.json direct
-          VERSIONS=$(cat versions.json | jq -r 'to_entries[] | "• \(.key) : \(.value)"' | sed 's/$/\\n/' | tr -d '\n')
-
           if [ "$VANILLA_CHANGED" = "true" ]; then
-            TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
-            COLOR=16744448
+            TITLE="Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
           else
-            TITLE="🔧 Update loaders"
-            COLOR=3447003
+            TITLE="Update loaders Minecraft"
           fi
 
-          curl -fsSL -X POST "$DISCORD_WEBHOOK" \
+          DESC=$(cat versions.json | jq -r 'to_entries[] | "• \(.key) : \(.value)"' | paste -sd '\n')
+
+          curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"embeds\": [{
-                \"title\": \"${TITLE}\",
-                \"description\": \"${VERSIONS}\",
-                \"color\": ${COLOR},
-                \"footer\": {\"text\": \"Minecraft Version Tracker\"},
-                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-              }]
-            }"
+            -d "{\"content\": \"**${TITLE}**\n${DESC}\"}"
 
           echo "✅ Notification Discord envoyée"
