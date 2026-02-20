@@ -31,15 +31,23 @@ jobs:
 
           OLD_JSON=$(cat versions.json)
 
-          compare() {
+          # 💡 NOUVELLE LOGIQUE : On ne déclenche et n'enregistre que les VRAIES différences
+          check_status() {
             local key="$1"
             local new_val="$2"
-            local old_val
-            old_val=$(echo "$OLD_JSON" | jq -r ".${key} // empty")
+            local old_val=$(echo "$OLD_JSON" | jq -r ".${key} // empty")
 
-            if [ "$new_val" != "$old_val" ] && [ -n "$new_val" ]; then
-              jq --arg k "$key" --arg v "$new_val" '.[$k] = $v' versions.json > versions.json.tmp
-              mv versions.json.tmp versions.json
+            if [ -z "$new_val" ]; then
+              if [ "$VANILLA_CHANGED" = true ]; then
+                LAGGING="${LAGGING},${key}"
+              fi
+            elif [ "$new_val" != "$old_val" ]; then
+              if [ "$VANILLA_CHANGED" = true ]; then
+                CHANGES="${CHANGES},${key}"
+              else
+                MINOR_UPDATES="${MINOR_UPDATES},${key}"
+              fi
+              jq --arg k "$key" --arg v "$new_val" '.[$k] = $v' versions.json > tmp.json && mv tmp.json versions.json
               HAS_NEW=true
             fi
           }
@@ -49,20 +57,22 @@ jobs:
           # ============================================
           echo "::group::Checking Vanilla"
           MANIFEST=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
-          VANILLA=$(echo "$MANIFEST" | jq -r '.latest.release')
-          SNAPSHOT=$(echo "$MANIFEST" | jq -r '.latest.snapshot')
+          VANILLA=$(echo "$MANIFEST" | jq -r '.latest.release // empty')
+          SNAPSHOT=$(echo "$MANIFEST" | jq -r '.latest.snapshot // empty')
           OLD_VANILLA=$(echo "$OLD_JSON" | jq -r '.vanilla // empty')
 
           VANILLA_CHANGED=false
-          if [ "$VANILLA" != "$OLD_VANILLA" ] && [ -n "$OLD_VANILLA" ]; then
+          if [ "$VANILLA" != "$OLD_VANILLA" ] && [ -n "$VANILLA" ]; then
             VANILLA_CHANGED=true
             echo "🆕 Vanilla: ${OLD_VANILLA} → ${VANILLA}"
+            CHANGES="${CHANGES},vanilla"
+            jq --arg k "vanilla" --arg v "$VANILLA" '.["vanilla"] = $v' versions.json > tmp.json && mv tmp.json versions.json
+            HAS_NEW=true
           else
             echo "✅ Vanilla inchangé: ${VANILLA}"
           fi
 
-          compare "vanilla"  "$VANILLA"
-          compare "snapshot" "$SNAPSHOT"
+          check_status "snapshot" "$SNAPSHOT"
           echo "::endgroup::"
 
           # ============================================
@@ -70,52 +80,29 @@ jobs:
           # ============================================
           echo "::group::Checking Paper"
           PAPER=""
-
-          PAPER_BUILDS=$(curl -fsSL \
-            "https://api.papermc.io/v2/projects/paper/versions/${VANILLA}/builds" 2>/dev/null || echo "{}")
-          PAPER_BUILD=$(echo "$PAPER_BUILDS" | jq -r '.builds[-1].build // empty')
+          PAPER_BUILDS=$(curl -fsSL "https://api.papermc.io/v2/projects/paper/versions/${VANILLA}/builds" 2>/dev/null || echo "{}")
+          PAPER_BUILD=$(echo "$PAPER_BUILDS" | jq -r '.builds[-1]?.build // empty')
 
           if [ -n "$PAPER_BUILD" ]; then
             PAPER="${VANILLA}-build.${PAPER_BUILD}"
-            if [ "$VANILLA_CHANGED" = true ]; then
-              CHANGES="${CHANGES},paper"
-            else
-              MINOR_UPDATES="${MINOR_UPDATES},paper"
-            fi
-          else
-            if [ "$VANILLA_CHANGED" = true ]; then
-              LAGGING="${LAGGING},paper"
-            fi
           fi
 
-          compare "paper" "$PAPER"
+          check_status "paper" "$PAPER"
           echo "::endgroup::"
 
           # ============================================
           # 3. Fabric
           # ============================================
           echo "::group::Checking Fabric"
-          FABRIC_LOADER=$(curl -fsSL \
-            "https://meta.fabricmc.net/v2/versions/loader" | jq -r '.[0].version // empty')
+          FABRIC=""
+          FABRIC_LOADER=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/loader" | jq -r '.[0].version // empty')
+          FABRIC_GAME=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/game" | jq -r '[.[] | select(.stable==true)][0].version // empty')
 
-          FABRIC_GAME=$(curl -fsSL \
-            "https://meta.fabricmc.net/v2/versions/game" | jq -r '[.[] | select(.stable==true)][0].version // empty')
-
-          if [ -n "$FABRIC_LOADER" ]; then
-            if [ "$FABRIC_GAME" = "$VANILLA" ]; then
-              if [ "$VANILLA_CHANGED" = true ]; then
-                CHANGES="${CHANGES},fabric"
-              else
-                MINOR_UPDATES="${MINOR_UPDATES},fabric"
-              fi
-            else
-              if [ "$VANILLA_CHANGED" = true ]; then
-                LAGGING="${LAGGING},fabric"
-              fi
-            fi
+          if [ -n "$FABRIC_LOADER" ] && [ "$FABRIC_GAME" = "$VANILLA" ]; then
+            FABRIC="${VANILLA}-loader.${FABRIC_LOADER}"
           fi
 
-          compare "fabric" "$FABRIC_LOADER"
+          check_status "fabric" "$FABRIC"
           echo "::endgroup::"
 
           # ============================================
@@ -123,9 +110,7 @@ jobs:
           # ============================================
           echo "::group::Checking Forge"
           FORGE=""
-
-          FORGE_PROMOS=$(curl -fsSL \
-            "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json" 2>/dev/null || echo "{}")
+          FORGE_PROMOS=$(curl -fsSL "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json" 2>/dev/null || echo "{}")
           FORGE_REC=$(echo "$FORGE_PROMOS" | jq -r ".promos[\"${VANILLA}-recommended\"] // empty")
           FORGE_LAT=$(echo "$FORGE_PROMOS" | jq -r ".promos[\"${VANILLA}-latest\"] // empty")
 
@@ -135,19 +120,7 @@ jobs:
             FORGE="$FORGE_LAT"
           fi
 
-          if [ -n "$FORGE" ]; then
-            if [ "$VANILLA_CHANGED" = true ]; then
-              CHANGES="${CHANGES},forge"
-            else
-              MINOR_UPDATES="${MINOR_UPDATES},forge"
-            fi
-          else
-            if [ "$VANILLA_CHANGED" = true ]; then
-              LAGGING="${LAGGING},forge"
-            fi
-          fi
-
-          compare "forge" "$FORGE"
+          check_status "forge" "$FORGE"
           echo "::endgroup::"
 
           # ============================================
@@ -155,30 +128,19 @@ jobs:
           # ============================================
           echo "::group::Checking NeoForge"
           NEOFORGE=""
-
+          
+          # On extrait "21" de "1.21.x"
           MC_PARTS=(${VANILLA//./ })
           MC_MINOR="${MC_PARTS[1]:-0}"
-          MC_PATCH="${MC_PARTS[2]:-0}"
 
-          NEOFORGE_VERSIONS=$(curl -fsSL \
-            "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" 2>/dev/null || echo "{}")
+          NEOFORGE_VERSIONS=$(curl -fsSL "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" 2>/dev/null || echo "{}")
+          
+          # Filtre avancé : Bonne branche ET uniquement des chiffres (pas de beta/snapshot)
           NEOFORGE=$(echo "$NEOFORGE_VERSIONS" | jq -r \
-            --arg prefix "${MC_MINOR}.${MC_PATCH}." \
-            '[.versions[] | select(startswith($prefix))] | sort | last // empty')
+            --arg major "$MC_MINOR" \
+            '[.versions[]? | select(startswith($major + ".") and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(split(".") | map(tonumber)) | last // empty')
 
-          if [ -n "$NEOFORGE" ]; then
-            if [ "$VANILLA_CHANGED" = true ]; then
-              CHANGES="${CHANGES},neoforge"
-            else
-              MINOR_UPDATES="${MINOR_UPDATES},neoforge"
-            fi
-          else
-            if [ "$VANILLA_CHANGED" = true ]; then
-              LAGGING="${LAGGING},neoforge"
-            fi
-          fi
-
-          compare "neoforge" "$NEOFORGE"
+          check_status "neoforge" "$NEOFORGE"
           echo "::endgroup::"
 
           # ============================================
@@ -186,25 +148,15 @@ jobs:
           # ============================================
           echo "::group::Checking Spigot"
           SPIGOT=""
-
-          SPIGOT_INFO=$(curl -fsSL \
-            "https://hub.spigotmc.org/versions/${VANILLA}.json" 2>/dev/null || echo "{}")
-          SPIGOT_REF=$(echo "$SPIGOT_INFO" | jq -r '.refs.Spigot // empty')
+          SPIGOT_INFO=$(curl -fsSL "https://hub.spigotmc.org/versions/${VANILLA}.json" 2>/dev/null || echo "{}")
+          SPIGOT_REF=$(echo "$SPIGOT_INFO" | jq -r '.refs?.Spigot // empty')
 
           if [ -n "$SPIGOT_REF" ]; then
-            SPIGOT="${VANILLA}"
-            if [ "$VANILLA_CHANGED" = true ]; then
-              CHANGES="${CHANGES},spigot"
-            else
-              MINOR_UPDATES="${MINOR_UPDATES},spigot"
-            fi
-          else
-            if [ "$VANILLA_CHANGED" = true ]; then
-              LAGGING="${LAGGING},spigot"
-            fi
+            # Ajoute le hash de commit pour détecter les correctifs
+            SPIGOT="${VANILLA}-$(echo "$SPIGOT_REF" | cut -c1-7)"
           fi
 
-          compare "spigot" "$SPIGOT"
+          check_status "spigot" "$SPIGOT"
           echo "::endgroup::"
 
           # ============================================
@@ -224,7 +176,7 @@ jobs:
           echo "Vanilla       : ${VANILLA} (changed: ${VANILLA_CHANGED})"
           echo "Snapshot      : ${SNAPSHOT}"
           echo "Paper         : ${PAPER:-❌}"
-          echo "Fabric        : ${FABRIC_LOADER:-❌}"
+          echo "Fabric        : ${FABRIC:-❌}"
           echo "Forge         : ${FORGE:-❌}"
           echo "NeoForge      : ${NEOFORGE:-❌}"
           echo "Spigot        : ${SPIGOT:-❌}"
@@ -300,7 +252,7 @@ jobs:
           branch: auto/version-update
           labels: automated,versions
 
-# ============================================
+      # ============================================
       # Discord Notification
       # ============================================
       - name: Notify Discord
@@ -322,7 +274,7 @@ jobs:
           DESC_LAGGING=""
           DESC_MINOR=""
           
-          # 💡 L'astuce magique : un vrai saut de ligne formaté pour bash
+          # Variable pour les sauts de ligne dans Discord
           NL=$'\n'
 
           # 1. On traite Vanilla en premier s'il a changé
@@ -337,7 +289,6 @@ jobs:
             
             [ -z "$OLD_V" ] && OLD_V="N/A"
 
-            # On remplace les \n par la variable $NL
             if echo ",$CHANGES," | grep -q ",$KEY,"; then
               DESC_UPDATED="${DESC_UPDATED}• \`${KEY}\` : \`${OLD_V}\` ➔ \`${NEW_V}\`${NL}"
             elif echo ",$LAGGING," | grep -q ",$KEY,"; then
