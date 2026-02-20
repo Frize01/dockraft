@@ -129,13 +129,11 @@ jobs:
           echo "::group::Checking NeoForge"
           NEOFORGE=""
           
-          # Extraction de la branche (ex: 21 pour 1.21.x)
           MC_PARTS=(${VANILLA//./ })
           MC_MINOR="${MC_PARTS[1]:-0}"
 
           NEOFORGE_VERSIONS=$(curl -fsSL "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" 2>/dev/null || echo "{}")
           
-          # Ne prend que les versions stables (pas de lettres) correspondantes à la branche
           NEOFORGE=$(echo "$NEOFORGE_VERSIONS" | jq -r \
             --arg major "$MC_MINOR" \
             '[.versions[]? | select(startswith($major + ".") and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(split(".") | map(tonumber)) | last // empty')
@@ -235,7 +233,6 @@ jobs:
           NEW_JSON=$(cat versions.json)
           OLD_JSON=$(git show HEAD:versions.json 2>/dev/null || echo '{}')
 
-          # Utilisation de tableaux Bash pour contourner les bugs de \n
           UPDATED_ARR=()
           LAGGING_ARR=()
           MINOR_ARR=()
@@ -260,7 +257,6 @@ jobs:
 
           FIELDS="[]"
 
-          # Ajout des blocs conditionnels seulement s'il y a du contenu
           if [ ${#UPDATED_ARR[@]} -gt 0 ]; then
             DESC_UPDATED=$(printf "%s\n" "${UPDATED_ARR[@]}")
             FIELD=$(jq -n --arg name "✅ Mis à jour" --arg value "$DESC_UPDATED" '{name: $name, value: $value, inline: false}')
