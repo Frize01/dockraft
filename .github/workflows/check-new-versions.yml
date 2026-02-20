@@ -323,10 +323,13 @@ jobs:
             TITLE="Update loaders Minecraft"
           fi
 
-          DESC=$(cat versions.json | jq -r 'to_entries[] | "• \(.key) : \(.value)"' | paste -sd '\n')
+          DESC=$(cat versions.json | jq -r '[to_entries[] | "• \(.key) : \(.value)"] | join("\n")')
+
+          PAYLOAD=$(jq -n --arg title "$TITLE" --arg desc "$DESC" \
+            '{"content": ("**" + $title + "**\n" + $desc)}')
 
           curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
-            -d "{\"content\": \"**${TITLE}**\n${DESC}\"}"
+            -d "$PAYLOAD"
 
           echo "✅ Notification Discord envoyée"
