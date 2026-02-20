@@ -24,10 +24,29 @@ jobs:
             echo '{}' > versions.json
           fi
 
+          # Sauvegarder l'état AVANT les modifications
+          cp versions.json versions.json.bak
+
           CHANGES=""
-          DETAILS=""
           LAGGING=""
           MINOR_UPDATES=""
+          HAS_NEW=false
+
+          # ============================================
+          # Fonction compare (mutuellement exclusif)
+          # ============================================
+          compare() {
+            local key="$1"
+            local new_val="$2"
+            local old_val
+            old_val=$(jq -r ".${key} // empty" versions.json.bak)
+
+            if [ "$new_val" != "$old_val" ] && [ -n "$new_val" ]; then
+              jq --arg k "$key" --arg v "$new_val" '.[$k] = $v' versions.json > versions.json.tmp
+              mv versions.json.tmp versions.json
+              HAS_NEW=true
+            fi
+          }
 
           # ============================================
           # 1. Vanilla & Snapshot
@@ -36,15 +55,18 @@ jobs:
           MANIFEST=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
           VANILLA=$(echo "$MANIFEST" | jq -r '.latest.release')
           SNAPSHOT=$(echo "$MANIFEST" | jq -r '.latest.snapshot')
-          OLD_VANILLA=$(jq -r '.vanilla // empty' versions.json)
+          OLD_VANILLA=$(jq -r '.vanilla // empty' versions.json.bak)
 
           VANILLA_CHANGED=false
-          if [ "$VANILLA" != "$OLD_VANILLA" ]; then
+          if [ "$VANILLA" != "$OLD_VANILLA" ] && [ -n "$OLD_VANILLA" ]; then
             VANILLA_CHANGED=true
-            echo "🆕 Vanilla: ${OLD_VANILLA:-none} → ${VANILLA}"
+            echo "🆕 Vanilla: ${OLD_VANILLA} → ${VANILLA}"
           else
             echo "✅ Vanilla inchangé: ${VANILLA}"
           fi
+
+          compare "vanilla"  "$VANILLA"
+          compare "snapshot" "$SNAPSHOT"
           echo "::endgroup::"
 
           # ============================================
@@ -52,7 +74,6 @@ jobs:
           # ============================================
           echo "::group::Checking Paper"
           PAPER=""
-          PAPER_CHANGE_TYPE=""
 
           PAPER_BUILDS=$(curl -fsSL \
             "https://api.papermc.io/v2/projects/paper/versions/${VANILLA}/builds" 2>/dev/null || echo "{}")
@@ -60,36 +81,31 @@ jobs:
 
           if [ -n "$PAPER_BUILD" ]; then
             PAPER="${VANILLA}-build.${PAPER_BUILD}"
-            PAPER_CHANGE_TYPE="new_mc"
-            echo "✅ Paper supporte ${VANILLA} → build ${PAPER_BUILD}"
-          elif [ "$VANILLA_CHANGED" = true ] && [ -n "$OLD_VANILLA" ]; then
+            if [ "$VANILLA_CHANGED" = true ]; then
+              CHANGES="${CHANGES}paper,"
+              echo "✅ Paper supporte ${VANILLA} → build ${PAPER_BUILD}"
+            else
+              MINOR_UPDATES="${MINOR_UPDATES}paper,"
+              echo "🔧 Paper update mineur → build ${PAPER_BUILD}"
+            fi
+          elif [ "$VANILLA_CHANGED" = true ]; then
             LAGGING="${LAGGING}paper,"
             OLD_BUILDS=$(curl -fsSL \
               "https://api.papermc.io/v2/projects/paper/versions/${OLD_VANILLA}/builds" 2>/dev/null || echo "{}")
             OLD_BUILD=$(echo "$OLD_BUILDS" | jq -r '.builds[-1].build // empty')
             if [ -n "$OLD_BUILD" ]; then
               PAPER="${OLD_VANILLA}-build.${OLD_BUILD}"
-              PAPER_CHANGE_TYPE="minor"
-              MINOR_UPDATES="${MINOR_UPDATES}paper,"
-              echo "⏳ Paper pas encore sur ${VANILLA}, update mineur sur ${OLD_VANILLA} → build ${OLD_BUILD}"
+              echo "⏳ Paper pas encore sur ${VANILLA}, dernier build: ${OLD_BUILD}"
             else
-              PAPER=$(jq -r '.paper // empty' versions.json)
-              echo "⏳ Paper pas encore sur ${VANILLA}, aucun update"
+              PAPER=$(jq -r '.paper // empty' versions.json.bak)
+              echo "⏳ Paper pas encore sur ${VANILLA}, aucun build trouvé"
             fi
           else
-            # Vanilla inchangé : check update de build sur la même version MC
-            OLD_BUILDS=$(curl -fsSL \
-              "https://api.papermc.io/v2/projects/paper/versions/${VANILLA}/builds" 2>/dev/null || echo "{}")
-            OLD_BUILD=$(echo "$OLD_BUILDS" | jq -r '.builds[-1].build // empty')
-            if [ -n "$OLD_BUILD" ]; then
-              PAPER="${VANILLA}-build.${OLD_BUILD}"
-              PAPER_CHANGE_TYPE="minor"
-              MINOR_UPDATES="${MINOR_UPDATES}paper,"
-              echo "🔧 Paper update mineur → build ${OLD_BUILD}"
-            else
-              PAPER=$(jq -r '.paper // empty' versions.json)
-            fi
+            PAPER=$(jq -r '.paper // empty' versions.json.bak)
+            echo "✅ Paper inchangé: ${PAPER}"
           fi
+
+          compare "paper" "$PAPER"
           echo "::endgroup::"
 
           # ============================================
@@ -97,7 +113,6 @@ jobs:
           # ============================================
           echo "::group::Checking Fabric"
           FABRIC=""
-          FABRIC_CHANGE_TYPE=""
 
           FABRIC_GAME=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/game" \
             | jq -r --arg v "$VANILLA" '.[] | select(.version == $v) | .version // empty')
@@ -105,29 +120,31 @@ jobs:
             | jq -r '.[0].version // empty')
 
           if [ -n "$FABRIC_GAME" ] && [ -n "$FABRIC_LOADER" ]; then
-            FABRIC="${FABRIC_LOADER}"
+            FABRIC="${VANILLA}-loader.${FABRIC_LOADER}"
             if [ "$VANILLA_CHANGED" = true ]; then
-              FABRIC_CHANGE_TYPE="new_mc"
+              CHANGES="${CHANGES}fabric,"
               echo "✅ Fabric supporte ${VANILLA} → loader ${FABRIC_LOADER}"
             else
-              FABRIC_CHANGE_TYPE="minor"
               MINOR_UPDATES="${MINOR_UPDATES}fabric,"
-              echo "🔧 Fabric update loader → ${FABRIC_LOADER}"
+              echo "🔧 Fabric update mineur → loader ${FABRIC_LOADER}"
+            fi
+          elif [ "$VANILLA_CHANGED" = true ]; then
+            LAGGING="${LAGGING}fabric,"
+            OLD_FABRIC_GAME=$(curl -fsSL "https://meta.fabricmc.net/v2/versions/game" \
+              | jq -r --arg v "$OLD_VANILLA" '.[] | select(.version == $v) | .version // empty')
+            if [ -n "$OLD_FABRIC_GAME" ]; then
+              FABRIC="${OLD_VANILLA}-loader.${FABRIC_LOADER}"
+              echo "⏳ Fabric pas encore sur ${VANILLA}, reste sur ${OLD_VANILLA}"
+            else
+              FABRIC=$(jq -r '.fabric // empty' versions.json.bak)
+              echo "⏳ Fabric pas encore sur ${VANILLA}, aucune info"
             fi
           else
-            if [ "$VANILLA_CHANGED" = true ]; then
-              LAGGING="${LAGGING}fabric,"
-              echo "⏳ Fabric pas encore sur ${VANILLA}"
-            fi
-            if [ -n "$FABRIC_LOADER" ]; then
-              FABRIC="${FABRIC_LOADER}"
-              FABRIC_CHANGE_TYPE="minor"
-              MINOR_UPDATES="${MINOR_UPDATES}fabric,"
-              echo "🔧 Fabric update loader sur ancienne MC → ${FABRIC_LOADER}"
-            else
-              FABRIC=$(jq -r '.fabric // empty' versions.json)
-            fi
+            FABRIC=$(jq -r '.fabric // empty' versions.json.bak)
+            echo "✅ Fabric inchangé: ${FABRIC}"
           fi
+
+          compare "fabric" "$FABRIC"
           echo "::endgroup::"
 
           # ============================================
@@ -135,38 +152,38 @@ jobs:
           # ============================================
           echo "::group::Checking Forge"
           FORGE=""
-          FORGE_CHANGE_TYPE=""
 
-          FORGE_PROMO=$(curl -fsSL \
-            https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json 2>/dev/null || echo "{}")
+          FORGE_DATA=$(curl -fsSL \
+            "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json" 2>/dev/null || echo "{}")
+          FORGE_VERSION=$(echo "$FORGE_DATA" | jq -r \
+            --arg v "$VANILLA" '.promos[$v+"-recommended"] // .promos[$v+"-latest"] // empty')
 
-          FORGE_VER=$(echo "$FORGE_PROMO" | jq -r ".promos[\"${VANILLA}-latest\"] // empty")
-
-          if [ -n "$FORGE_VER" ]; then
-            FORGE="${VANILLA}-${FORGE_VER}"
+          if [ -n "$FORGE_VERSION" ]; then
+            FORGE="${VANILLA}-${FORGE_VERSION}"
             if [ "$VANILLA_CHANGED" = true ]; then
-              FORGE_CHANGE_TYPE="new_mc"
-              echo "✅ Forge supporte ${VANILLA} → ${FORGE_VER}"
+              CHANGES="${CHANGES}forge,"
+              echo "✅ Forge supporte ${VANILLA} → ${FORGE_VERSION}"
             else
-              FORGE_CHANGE_TYPE="minor"
               MINOR_UPDATES="${MINOR_UPDATES}forge,"
-              echo "🔧 Forge update mineur → ${FORGE_VER}"
+              echo "🔧 Forge update mineur → ${FORGE_VERSION}"
             fi
-          elif [ "$VANILLA_CHANGED" = true ] && [ -n "$OLD_VANILLA" ]; then
+          elif [ "$VANILLA_CHANGED" = true ]; then
             LAGGING="${LAGGING}forge,"
-            OLD_FORGE_VER=$(echo "$FORGE_PROMO" | jq -r ".promos[\"${OLD_VANILLA}-latest\"] // empty")
-            if [ -n "$OLD_FORGE_VER" ] && [ "${OLD_VANILLA}-${OLD_FORGE_VER}" != "$(jq -r '.forge // empty' versions.json)" ]; then
-              FORGE="${OLD_VANILLA}-${OLD_FORGE_VER}"
-              FORGE_CHANGE_TYPE="minor"
-              MINOR_UPDATES="${MINOR_UPDATES}forge,"
-              echo "⏳ Forge pas encore sur ${VANILLA}, update mineur sur ${OLD_VANILLA} → ${OLD_FORGE_VER}"
+            OLD_FORGE=$(echo "$FORGE_DATA" | jq -r \
+              --arg v "$OLD_VANILLA" '.promos[$v+"-recommended"] // .promos[$v+"-latest"] // empty')
+            if [ -n "$OLD_FORGE" ]; then
+              FORGE="${OLD_VANILLA}-${OLD_FORGE}"
+              echo "⏳ Forge pas encore sur ${VANILLA}, reste sur ${OLD_VANILLA}-${OLD_FORGE}"
             else
-              FORGE=$(jq -r '.forge // empty' versions.json)
-              echo "⏳ Forge pas encore sur ${VANILLA}, aucun update"
+              FORGE=$(jq -r '.forge // empty' versions.json.bak)
+              echo "⏳ Forge pas encore sur ${VANILLA}, aucune info"
             fi
           else
-            FORGE=$(jq -r '.forge // empty' versions.json)
+            FORGE=$(jq -r '.forge // empty' versions.json.bak)
+            echo "✅ Forge inchangé: ${FORGE}"
           fi
+
+          compare "forge" "$FORGE"
           echo "::endgroup::"
 
           # ============================================
@@ -174,175 +191,195 @@ jobs:
           # ============================================
           echo "::group::Checking NeoForge"
           NEOFORGE=""
-          NEOFORGE_CHANGE_TYPE=""
 
+          # NeoForge utilise le format MAJEUR.MINEUR.PATCH basé sur la MC
+          # Ex: MC 1.21.4 → NeoForge 21.4.x
           MC_MAJOR=$(echo "$VANILLA" | cut -d. -f2)
           MC_MINOR=$(echo "$VANILLA" | cut -d. -f3)
           MC_MINOR=${MC_MINOR:-0}
+          NEO_PREFIX="${MC_MAJOR}.${MC_MINOR}"
 
-          NEOFORGE_VER=$(curl -fsSL \
-            "https://maven.neoforged.net/api/maven/latest/version/releases/net%2Fneoforged%2Fneoforge" \
-            2>/dev/null | jq -r '.version // empty')
+          NEO_DATA=$(curl -fsSL \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml" 2>/dev/null || echo "")
+          NEO_VERSION=$(echo "$NEO_DATA" | grep -oP "<version>${NEO_PREFIX}\.[0-9]+</version>" \
+            | grep -oP "${NEO_PREFIX}\.[0-9]+" | sort -V | tail -1)
 
-          if [ -n "$NEOFORGE_VER" ]; then
-            NEO_MAJOR=$(echo "$NEOFORGE_VER" | cut -d. -f1)
-            NEO_MINOR=$(echo "$NEOFORGE_VER" | cut -d. -f2)
-
-            if [ "$NEO_MAJOR" = "$MC_MAJOR" ] && [ "$NEO_MINOR" = "$MC_MINOR" ]; then
-              NEOFORGE="${NEOFORGE_VER}"
-              if [ "$VANILLA_CHANGED" = true ]; then
-                NEOFORGE_CHANGE_TYPE="new_mc"
-                echo "✅ NeoForge supporte ${VANILLA} → ${NEOFORGE_VER}"
-              else
-                NEOFORGE_CHANGE_TYPE="minor"
-                MINOR_UPDATES="${MINOR_UPDATES}neoforge,"
-                echo "🔧 NeoForge update mineur → ${NEOFORGE_VER}"
-              fi
+          if [ -n "$NEO_VERSION" ]; then
+            NEOFORGE="$NEO_VERSION"
+            if [ "$VANILLA_CHANGED" = true ]; then
+              CHANGES="${CHANGES}neoforge,"
+              echo "✅ NeoForge supporte ${VANILLA} → ${NEO_VERSION}"
             else
-              if [ "$VANILLA_CHANGED" = true ]; then
-                LAGGING="${LAGGING}neoforge,"
-                echo "⏳ NeoForge pas encore sur ${VANILLA} (latest: ${NEOFORGE_VER})"
-              fi
-              OLD_NEOFORGE=$(jq -r '.neoforge // empty' versions.json)
-              if [ "$NEOFORGE_VER" != "$OLD_NEOFORGE" ]; then
-                NEOFORGE="${NEOFORGE_VER}"
-                NEOFORGE_CHANGE_TYPE="minor"
-                MINOR_UPDATES="${MINOR_UPDATES}neoforge,"
-                echo "🔧 NeoForge update mineur sur ancienne MC → ${NEOFORGE_VER}"
-              else
-                NEOFORGE="$OLD_NEOFORGE"
-              fi
+              MINOR_UPDATES="${MINOR_UPDATES}neoforge,"
+              echo "🔧 NeoForge update mineur → ${NEO_VERSION}"
+            fi
+          elif [ "$VANILLA_CHANGED" = true ]; then
+            LAGGING="${LAGGING}neoforge,"
+            OLD_MC_MAJOR=$(echo "$OLD_VANILLA" | cut -d. -f2)
+            OLD_MC_MINOR=$(echo "$OLD_VANILLA" | cut -d. -f3)
+            OLD_MC_MINOR=${OLD_MC_MINOR:-0}
+            OLD_NEO_PREFIX="${OLD_MC_MAJOR}.${OLD_MC_MINOR}"
+            OLD_NEO_VERSION=$(echo "$NEO_DATA" | grep -oP \
+              "<version>${OLD_NEO_PREFIX}\.[0-9]+</version>" \
+              | grep -oP "${OLD_NEO_PREFIX}\.[0-9]+" | sort -V | tail -1)
+            if [ -n "$OLD_NEO_VERSION" ]; then
+              NEOFORGE="$OLD_NEO_VERSION"
+              echo "⏳ NeoForge pas encore sur ${VANILLA}, reste sur ${OLD_NEO_VERSION}"
+            else
+              NEOFORGE=$(jq -r '.neoforge // empty' versions.json.bak)
+              echo "⏳ NeoForge pas encore sur ${VANILLA}, aucune info"
             fi
           else
-            NEOFORGE=$(jq -r '.neoforge // empty' versions.json)
+            NEOFORGE=$(jq -r '.neoforge // empty' versions.json.bak)
+            echo "✅ NeoForge inchangé: ${NEOFORGE}"
           fi
+
+          compare "neoforge" "$NEOFORGE"
           echo "::endgroup::"
 
           # ============================================
-          # 6. Spigot (suit toujours vanilla)
+          # 6. Spigot
           # ============================================
           echo "::group::Checking Spigot"
-          SPIGOT="${VANILLA}"
-          echo "Spigot: ${SPIGOT}"
+          SPIGOT=""
+
+          SPIGOT_DATA=$(curl -fsSL \
+            "https://hub.spigotmc.org/versions/${VANILLA}.json" 2>/dev/null || echo "{}")
+          SPIGOT_REF=$(echo "$SPIGOT_DATA" | jq -r '.refs.BuildData // empty')
+
+          if [ -n "$SPIGOT_REF" ]; then
+            SPIGOT="${VANILLA}-${SPIGOT_REF:0:7}"
+            if [ "$VANILLA_CHANGED" = true ]; then
+              CHANGES="${CHANGES}spigot,"
+              echo "✅ Spigot supporte ${VANILLA} → ref ${SPIGOT_REF:0:7}"
+            else
+              MINOR_UPDATES="${MINOR_UPDATES}spigot,"
+              echo "🔧 Spigot update mineur → ref ${SPIGOT_REF:0:7}"
+            fi
+          elif [ "$VANILLA_CHANGED" = true ]; then
+            LAGGING="${LAGGING}spigot,"
+            OLD_SPIGOT_DATA=$(curl -fsSL \
+              "https://hub.spigotmc.org/versions/${OLD_VANILLA}.json" 2>/dev/null || echo "{}")
+            OLD_SPIGOT_REF=$(echo "$OLD_SPIGOT_DATA" | jq -r '.refs.BuildData // empty')
+            if [ -n "$OLD_SPIGOT_REF" ]; then
+              SPIGOT="${OLD_VANILLA}-${OLD_SPIGOT_REF:0:7}"
+              echo "⏳ Spigot pas encore sur ${VANILLA}, reste sur ${OLD_VANILLA}"
+            else
+              SPIGOT=$(jq -r '.spigot // empty' versions.json.bak)
+              echo "⏳ Spigot pas encore sur ${VANILLA}, aucune info"
+            fi
+          else
+            SPIGOT=$(jq -r '.spigot // empty' versions.json.bak)
+            echo "✅ Spigot inchangé: ${SPIGOT}"
+          fi
+
+          compare "spigot" "$SPIGOT"
           echo "::endgroup::"
 
           # ============================================
-          # 7. Comparaison et mise à jour versions.json
+          # 7. Vanilla changed → toujours dans CHANGES
           # ============================================
-          compare() {
+          if [ "$VANILLA_CHANGED" = true ]; then
+            CHANGES="vanilla,snapshot,${CHANGES}"
+          elif [ "$(jq -r '.snapshot // empty' versions.json.bak)" != "$SNAPSHOT" ]; then
+            MINOR_UPDATES="${MINOR_UPDATES}snapshot,"
+          fi
+
+          # ============================================
+          # 8. Construire le VERSION_MAP
+          # ============================================
+          build_map() {
             local key="$1"
             local new_val="$2"
-            local change_type="$3"
-
-            if [ -z "$new_val" ]; then return; fi
-
             local old_val
-            old_val=$(jq -r ".${key} // empty" versions.json)
-
-            if [ "$new_val" != "$old_val" ]; then
-              CHANGES="${CHANGES}${key},"
-
-              local badge=""
-              case "$change_type" in
-                new_mc) badge="🆕 Nouvelle MC" ;;
-                minor)
-                  if echo "$LAGGING" | grep -q "$key"; then
-                    badge="🔧 Fix (ancienne MC)"
-                  else
-                    badge="🔧 Update mineur"
-                  fi
-                  ;;
-                *) badge="✅" ;;
-              esac
-
-              if [ -n "$old_val" ]; then
-                DETAILS="${DETAILS}| \`${key}\` | \`${old_val}\` | \`${new_val}\` | ${badge} |\n"
-              else
-                DETAILS="${DETAILS}| \`${key}\` | _nouveau_ | \`${new_val}\` | ${badge} |\n"
-              fi
-
-              jq --arg k "$key" --arg v "$new_val" '.[$k] = $v' versions.json > tmp.json \
-                && mv tmp.json versions.json
+            old_val=$(jq -r ".${key} // empty" versions.json.bak)
+            if [ -n "$new_val" ]; then
+              echo "${key}:${old_val:-inconnu}→${new_val}"
             fi
           }
 
-          compare "vanilla"  "$VANILLA"  "new_mc"
-          compare "snapshot" "$SNAPSHOT" "minor"
-          compare "paper"    "$PAPER"    "$PAPER_CHANGE_TYPE"
-          compare "fabric"   "$FABRIC"   "$FABRIC_CHANGE_TYPE"
-          compare "forge"    "$FORGE"    "$FORGE_CHANGE_TYPE"
-          compare "neoforge" "$NEOFORGE" "$NEOFORGE_CHANGE_TYPE"
-          compare "spigot"   "$SPIGOT"   "new_mc"
+          VERSION_MAP=$(printf "%s\n" \
+            "$(build_map "vanilla"  "$VANILLA")" \
+            "$(build_map "snapshot" "$SNAPSHOT")" \
+            "$(build_map "paper"    "$PAPER")" \
+            "$(build_map "fabric"   "$FABRIC")" \
+            "$(build_map "forge"    "$FORGE")" \
+            "$(build_map "neoforge" "$NEOFORGE")" \
+            "$(build_map "spigot"   "$SPIGOT")" \
+          )
+
+          # Nettoyer les lignes vides
+          VERSION_MAP=$(echo "$VERSION_MAP" | grep -v '^$')
 
           # ============================================
-          # 8. Outputs
+          # 9. Outputs
           # ============================================
-          HAS_NEW=false
-          [ -n "$CHANGES" ] && HAS_NEW=true
-
-          echo "has_new=${HAS_NEW}"            >> "$GITHUB_OUTPUT"
-          echo "vanilla_changed=${VANILLA_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "vanilla=${VANILLA}"            >> "$GITHUB_OUTPUT"
-          echo "old_vanilla=${OLD_VANILLA}"    >> "$GITHUB_OUTPUT"
-          echo "changes=${CHANGES%,}"          >> "$GITHUB_OUTPUT"
-          echo "lagging=${LAGGING%,}"          >> "$GITHUB_OUTPUT"
-          echo "minor_updates=${MINOR_UPDATES%,}" >> "$GITHUB_OUTPUT"
-
           {
-            echo "details<<EOF"
-            printf "%b" "$DETAILS"
+            echo "has_new=${HAS_NEW}"
+            echo "vanilla=${VANILLA}"
+            echo "old_vanilla=${OLD_VANILLA}"
+            echo "vanilla_changed=${VANILLA_CHANGED}"
+            echo "changes=${CHANGES%,}"
+            echo "lagging=${LAGGING%,}"
+            echo "minor_updates=${MINOR_UPDATES%,}"
+            echo "version_map<<EOF"
+            echo "$VERSION_MAP"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-          # Summary dans l'UI GitHub
-          {
-            echo "## 🔍 Résultat du check"
-            echo ""
-            if [ "$HAS_NEW" = true ]; then
-              echo "| Type | Ancienne | Nouvelle | Statut |"
-              echo "|------|----------|----------|--------|"
-              printf "%b" "$DETAILS"
-              if [ -n "$LAGGING" ]; then
-                echo ""
-                echo "### ⏳ En retard pour \`${VANILLA}\`"
-                echo "\`${LAGGING%,}\`"
-              fi
-            else
-              echo "✅ Aucun changement détecté."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo ""
+          echo "========== RÉSUMÉ =========="
+          echo "HAS_NEW       : $HAS_NEW"
+          echo "VANILLA       : $OLD_VANILLA → $VANILLA"
+          echo "CHANGES       : ${CHANGES%,}"
+          echo "LAGGING       : ${LAGGING%,}"
+          echo "MINOR_UPDATES : ${MINOR_UPDATES%,}"
+          echo "VERSION_MAP   :"
+          echo "$VERSION_MAP"
+          echo "============================"
 
       # ============================================
-      # Ouvre une PR si changement
+      # Commit versions.json
+      # ============================================
+      - name: Commit versions.json
+        if: steps.check.outputs.has_new == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.json
+          git diff --cached --quiet || git commit -m \
+            "chore: update versions.json [$(date -u +%Y-%m-%d)]"
+
+      # ============================================
+      # Pull Request
       # ============================================
       - name: Create Pull Request
         if: steps.check.outputs.has_new == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update minecraft versions"
+          commit-message: "chore: update MC versions [automated]"
           title: |
             ${{ steps.check.outputs.vanilla_changed == 'true'
-              && format('🆕 Nouvelle MC {0}', steps.check.outputs.vanilla)
+              && format('🆕 Nouvelle MC : {0} → {1}', steps.check.outputs.old_vanilla, steps.check.outputs.vanilla)
               || '🔧 Updates mineurs loaders' }}
           body: |
-            ## Changements détectés
+            ## 🎮 Résumé des changements
 
-            | Type | Ancienne | Nouvelle | Statut |
-            |------|----------|----------|--------|
-            ${{ steps.check.outputs.details }}
+            ${{ steps.check.outputs.vanilla_changed == 'true'
+              && format('🆕 Nouvelle MC : **{0}** → **{1}**', steps.check.outputs.old_vanilla, steps.check.outputs.vanilla)
+              || '> Pas de nouvelle version MC' }}
+
+            ${{ steps.check.outputs.changes != ''
+              && format('## ✅ Mis à jour\n`{0}`', steps.check.outputs.changes)
+              || '' }}
 
             ${{ steps.check.outputs.lagging != ''
-              && format('## ⏳ Pas encore sur {0}
-            Les types suivants n''ont pas encore de support pour la nouvelle version MC :
-            `{1}`
-            > Le workflow repassera dans 6h et mettra à jour cette liste.', steps.check.outputs.vanilla, steps.check.outputs.lagging)
-              || '## ✅ Tous les loaders sont à jour !' }}
+              && format('## ⏳ Pas encore sur {0}\nCertains loaders ne supportent pas encore la nouvelle version MC :\n`{1}`\n> Le workflow repassera dans 6h.', steps.check.outputs.vanilla, steps.check.outputs.lagging)
+              || '' }}
 
             ${{ steps.check.outputs.minor_updates != ''
-              && format('## 🔧 Updates mineurs détectés
-            Ces types ont eu un update **sans** changement de version MC (fix sécu, patch, etc.) :
-            `{0}`', steps.check.outputs.minor_updates)
+              && format('## 🔧 Updates mineurs\n`{0}`', steps.check.outputs.minor_updates)
               || '' }}
           branch: "chore/update-mc-versions"
           labels: "mc-versions,automated"
@@ -363,44 +400,69 @@ jobs:
 
           VANILLA="${{ steps.check.outputs.vanilla }}"
           OLD_VANILLA="${{ steps.check.outputs.old_vanilla }}"
-          CHANGES="${{ steps.check.outputs.changes }}"
-          LAGGING="${{ steps.check.outputs.lagging }}"
-          MINOR="${{ steps.check.outputs.minor_updates }}"
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
+          LAGGING="${{ steps.check.outputs.lagging }}"
+          VERSION_MAP="${{ steps.check.outputs.version_map }}"
 
-          # Construire les champs Discord
+          # Initialiser les listes par catégorie
+          UPDATED_LINES=""
+          LAGGING_LINES=""
+          MINOR_LINES=""
+
+          # Parser le VERSION_MAP ligne par ligne
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+
+            KEY=$(echo "$line" | cut -d: -f1)
+            VERSIONS=$(echo "$line" | cut -d: -f2)
+            OLD_V=$(echo "$VERSIONS" | cut -d'→' -f1)
+            NEW_V=$(echo "$VERSIONS" | cut -d'→' -f2)
+
+            # Mutuellement exclusif
+            if echo ",${LAGGING}," | grep -q ",${KEY},"; then
+              # ⏳ En retard
+              LAGGING_LINES="${LAGGING_LINES}• \`${KEY}\` : \`${OLD_V}\` *(attend \`${VANILLA}\`)*\n"
+            elif [ "$VANILLA_CHANGED" = "true" ] && [ "$KEY" != "snapshot" ]; then
+              # ✅ Supporte la nouvelle MC
+              UPDATED_LINES="${UPDATED_LINES}• \`${KEY}\` : \`${OLD_V}\` → \`${NEW_V}\`\n"
+            else
+              # 🔧 Update mineur
+              MINOR_LINES="${MINOR_LINES}• \`${KEY}\` : \`${OLD_V}\` → \`${NEW_V}\`\n"
+            fi
+          done <<< "$VERSION_MAP"
+
+          # Construire les fields Discord
           FIELDS="["
+          FIRST=true
 
-          # Champ : changements
-          CHANGES_DISPLAY=$(echo "$CHANGES" | tr ',' '\n' | sed 's/^/• /' | tr '\n' '\n')
-          FIELDS="${FIELDS}{\"name\":\"✅ Mis à jour\",\"value\":\"\`${CHANGES}\`\",\"inline\":false}"
+          add_field() {
+            local name="$1"
+            local value="$2"
+            [ -z "$value" ] && return
+            [ "$FIRST" = false ] && FIELDS="${FIELDS},"
+            # Échapper les guillemets dans value
+            value=$(echo "$value" | sed 's/"/\\"/g')
+            FIELDS="${FIELDS}{\"name\":\"${name}\",\"value\":\"${value}\",\"inline\":false}"
+            FIRST=false
+          }
 
-          # Champ : en retard (si applicable)
-          if [ -n "$LAGGING" ]; then
-            FIELDS="${FIELDS},{\"name\":\"⏳ Pas encore sur ${VANILLA}\",\"value\":\"\`${LAGGING}\`\",\"inline\":false}"
-          fi
-
-          # Champ : updates mineurs (si applicable)
-          if [ -n "$MINOR" ]; then
-            FIELDS="${FIELDS},{\"name\":\"🔧 Updates mineurs\",\"value\":\"\`${MINOR}\`\",\"inline\":false}"
-          fi
+          add_field "✅ Mis à jour"                          "$(printf "%b" "$UPDATED_LINES")"
+          add_field "⏳ Pas encore sur \`${VANILLA}\`"       "$(printf "%b" "$LAGGING_LINES")"
+          add_field "🔧 Updates mineurs"                     "$(printf "%b" "$MINOR_LINES")"
 
           FIELDS="${FIELDS}]"
 
           # Couleur et titre selon le scénario
-          if [ "$VANILLA_CHANGED" = true ] && [ -n "$LAGGING" ]; then
-            # Nouvelle MC mais certains loaders sont à la traîne
-            COLOR=16744448  # Orange
+          if [ "$VANILLA_CHANGED" = "true" ] && [ -n "$LAGGING" ]; then
+            COLOR=16744448
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
             DESC="Certains loaders ne supportent pas encore \`${VANILLA}\`."
-          elif [ "$VANILLA_CHANGED" = true ] && [ -z "$LAGGING" ]; then
-            # Nouvelle MC et tout le monde suit
-            COLOR=5814783   # Vert
+          elif [ "$VANILLA_CHANGED" = "true" ]; then
+            COLOR=5814783
             TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
             DESC="✅ Tous les loaders supportent déjà \`${VANILLA}\` !"
-          elif [ -z "$VANILLA_CHANGED" ] || [ "$VANILLA_CHANGED" = false ]; then
-            # Pas de changement MC, juste des updates mineurs
-            COLOR=3447003   # Bleu
+          else
+            COLOR=3447003
             TITLE="🔧 Updates mineurs loaders"
             DESC="Pas de nouvelle version MC, mais des loaders ont été mis à jour."
           fi
