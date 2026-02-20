@@ -318,15 +318,30 @@ jobs:
           VANILLA_CHANGED="${{ steps.check.outputs.vanilla_changed }}"
 
           if [ "$VANILLA_CHANGED" = "true" ]; then
-            TITLE="Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
+            TITLE="🆕 Nouvelle MC : ${OLD_VANILLA} → ${VANILLA}"
+            COLOR=16744448
           else
-            TITLE="Update loaders Minecraft"
+            TITLE="🔄 Update loaders Minecraft"
+            COLOR=3447003
           fi
 
-          DESC=$(cat versions.json | jq -r '[to_entries[] | "• \(.key) : \(.value)"] | join("\n")')
+          # Construire les fields depuis versions.json
+          FIELDS=$(jq '[to_entries[] | {name: .key, value: ("`" + .value + "`"), inline: true}]' versions.json)
 
-          PAYLOAD=$(jq -n --arg title "$TITLE" --arg desc "$DESC" \
-            '{"content": ("**" + $title + "**\n" + $desc)}')
+          PAYLOAD=$(jq -n \
+            --arg title "$TITLE" \
+            --argjson color "$COLOR" \
+            --argjson fields "$FIELDS" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              embeds: [{
+                title: $title,
+                color: $color,
+                fields: $fields,
+                footer: {text: "MC Version Tracker"},
+                timestamp: $ts
+              }]
+            }')
 
           curl -s -X POST "$DISCORD_WEBHOOK" \
             -H "Content-Type: application/json" \
