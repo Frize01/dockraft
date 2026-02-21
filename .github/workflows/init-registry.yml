@@ -129,7 +129,7 @@ jobs:
       # Test indispensable : Spigot et Forge sont lourds à build
       - name: Run CI Tests
         run: |
-          chmod +x ci-test.sh
+          chmod +x test.sh
           ./test.sh "${{ matrix.target }}" "${{ matrix.mc }}" "${{ matrix.java }}"
 
       - name: Login to Docker Hub
