@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # max-parallel: 5 # Uncomment to limit parallelism and reduce load on Docker Hub
       matrix:
         include:
           # --- JAVA 21 (1.21+) ---
