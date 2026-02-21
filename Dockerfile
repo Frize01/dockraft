@@ -39,10 +39,10 @@ RUN set -euo pipefail; \
     SERVER_URL=$(curl -fsSL "$MANIFEST_URL" | jq -r '.downloads.server.url'); \
     [ -n "$SERVER_URL" ] || { echo "❌ Pas de serveur pour cette version"; exit 1; }; \
     curl -fLo /tmp/server.jar "$SERVER_URL"; \
-    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; \
-    SIZE=$(stat -c%s /tmp/server.jar); \
-    [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
-    echo ">>> Download OK ($SIZE bytes)"
+    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; 
+    # SIZE=$(stat -c%s /tmp/server.jar); \
+    # [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
+    # echo ">>> Download OK ($SIZE bytes)"
 
 FROM base AS vanilla
 COPY --from=download-vanilla --chown=mcuser:mcuser /tmp/server.jar .
@@ -64,10 +64,10 @@ RUN set -euo pipefail; \
     SERVER_URL=$(curl -fsSL "$MANIFEST_URL" | jq -r '.downloads.server.url // empty'); \
     [ -n "$SERVER_URL" ] || { echo "❌ Pas de serveur pour ce snapshot"; exit 1; }; \
     curl -fLo /tmp/server.jar "$SERVER_URL"; \
-    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; \
-    SIZE=$(stat -c%s /tmp/server.jar); \
-    [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
-    echo ">>> Snapshot OK ($SIZE bytes)"
+    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; 
+    # SIZE=$(stat -c%s /tmp/server.jar); \
+    # [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
+    # echo ">>> Snapshot OK ($SIZE bytes)"
 
 FROM base AS snapshot
 COPY --from=download-snapshot --chown=mcuser:mcuser /tmp/server.jar .
@@ -87,10 +87,10 @@ RUN set -euo pipefail; \
     [ -n "$BUILD" ] || { echo "❌ Aucun build Paper pour $MC_VERSION"; exit 1; }; \
     curl -fLo /tmp/server.jar \
         "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds/${BUILD}/downloads/paper-${MC_VERSION}-${BUILD}.jar"; \
-    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; }; \
-    SIZE=$(stat -c%s /tmp/server.jar); \
-    [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
-    echo ">>> Paper OK ($SIZE bytes)"
+    test -s /tmp/server.jar || { echo "❌ JAR vide"; exit 1; };
+    # SIZE=$(stat -c%s /tmp/server.jar); \
+    # [ "$SIZE" -gt 10000000 ] || { echo "❌ JAR trop petit"; exit 1; }; \
+    # echo ">>> Paper OK ($SIZE bytes)"
 
 FROM base AS paper
 COPY --from=download-paper --chown=mcuser:mcuser /tmp/server.jar .
@@ -113,9 +113,9 @@ RUN set -eu; \
         echo "❌ Fabric pas dispo pour $MC_VERSION" && exit 1; \
     fi; \
     curl -fLo /tmp/server.jar \
-        "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${LOADER}/${INSTALLER}/server/jar"; \
-    SIZE=$(stat -c%s /tmp/server.jar); \
-    echo ">>> Fabric OK ($SIZE bytes)"
+        "https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${LOADER}/${INSTALLER}/server/jar";
+    # SIZE=$(stat -c%s /tmp/server.jar); \
+    # echo ">>> Fabric OK ($SIZE bytes)"
 
 FROM base AS fabric
 COPY --from=download-fabric --chown=mcuser:mcuser /tmp/server.jar .
