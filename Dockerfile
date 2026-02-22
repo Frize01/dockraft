@@ -140,7 +140,17 @@ RUN set -euo pipefail; \
     mkdir -p /tmp/forge-server && cd /tmp/forge-server; \
     java -jar /tmp/forge-installer.jar --installServer; \
     rm -f /tmp/forge-installer.jar; \
-    test -f run.sh || { echo "❌ run.sh introuvable après install"; exit 1; }; \
+    if [ -f run.sh ]; then \
+        echo ">>> Forge moderne détecté (run.sh présent)"; \
+        chmod +x run.sh; \
+    else \
+        echo ">>> Forge ancien détecté, création du lien server.jar"; \
+        # Trouve le JAR universel de Forge (ex: forge-1.12.2-14.23.5.2859-universal.jar)
+        FORGE_JAR=$(ls forge-*.jar | grep -v "installer" | head -n 1); \
+        [ -n "$FORGE_JAR" ] || { echo "❌ Aucun JAR Forge trouvé"; exit 1; }; \
+        ln -s "$FORGE_JAR" server.jar; \
+    fi; \
+    # ------------------------
     echo ">>> Forge OK"
 
 FROM base AS forge
