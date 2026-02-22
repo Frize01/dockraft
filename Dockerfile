@@ -199,7 +199,7 @@ FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
 
 # ============================================================
-# SPIGOT
+# SPIGOT (Correctif 1.7.10)
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jdk AS download-spigot
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
@@ -211,15 +211,16 @@ RUN mkdir -p /tmp/spigot-build /tmp/spigot-out \
     && curl -sSL -o BuildTools.jar \
         "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" \
     && git config --global --unset core.autocrlf || true \
-    # Logic spéciale pour la 1.7.10 qui est cassée dans BuildTools
     && if [ "$MC_VERSION" = "1.7.10" ]; then \
-        echo "⚠️ Spigot 1.7.10 ne peut plus être compilé via BuildTools."; \
-        echo ">>> Récupération depuis un miroir communautaire de confiance..."; \
-        curl -sSL -f -o /tmp/spigot-out/server.jar \
-            "https://cdn.getbukkit.org/spigot/spigot-1.7.10-SNAPSHOT-b1657.jar" || \
-        { echo "❌ Impossible de récupérer Spigot 1.7.10"; exit 1; }; \
+        echo "⚠️ Spigot 1.7.10 build-system is legacy."; \
+        # Nouvelle tentative sur un miroir plus stable ou stockage direct
+        # Si cette URL tombe, le mieux est de stocker le jar sur ton GitHub
+        curl -sSL -k -f -o /tmp/spigot-out/server.jar \
+            "https://download.getbukkit.org/spigot/spigot-1.7.10.jar" || \
+        curl -sSL -k -f -o /tmp/spigot-out/server.jar \
+            "https://maven.turtlemine.com/repository/minecraft/org/spigotmc/spigot/1.7.10-R0.1-SNAPSHOT/spigot-1.7.10-R0.1-SNAPSHOT.jar" || \
+        { echo "❌ Impossible de trouver un binaire 1.7.10 valide"; exit 1; }; \
     else \
-        # Build normal pour toutes les autres versions
         java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out && \
         mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar; \
     fi
