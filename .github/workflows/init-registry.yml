@@ -93,6 +93,7 @@ jobs:
 
           # - { target: "vanilla",  mc: "1.8.9",   java: "8" }
           # - { target: "spigot",   mc: "1.8.8",   java: "8" }
+          - { target: "paper",    mc: "1.8.8",   java: "8" }
           - { target: "forge",    mc: "1.8.9",   java: "8" }
 
           # - { target: "vanilla",  mc: "1.7.10",  java: "8" }
