@@ -197,6 +197,7 @@ RUN set -euo pipefail; \
 
 FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
+
 # ============================================================
 # SPIGOT
 # ============================================================
@@ -210,17 +211,17 @@ RUN mkdir -p /tmp/spigot-build /tmp/spigot-out \
     && curl -sSL -o BuildTools.jar \
         "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" \
     && git config --global --unset core.autocrlf || true \
-    # On tente le build. Si c'est la 1.7.10, BuildTools va probablement échouer.
-    && if java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out; then \
-        echo "✅ Spigot build success"; \
-        mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar; \
+    # Logic spéciale pour la 1.7.10 qui est cassée dans BuildTools
+    && if [ "$MC_VERSION" = "1.7.10" ]; then \
+        echo "⚠️ Spigot 1.7.10 ne peut plus être compilé via BuildTools."; \
+        echo ">>> Récupération depuis un miroir communautaire de confiance..."; \
+        curl -sSL -f -o /tmp/spigot-out/server.jar \
+            "https://cdn.getbukkit.org/spigot/spigot-1.7.10-SNAPSHOT-b1657.jar" || \
+        { echo "❌ Impossible de récupérer Spigot 1.7.10"; exit 1; }; \
     else \
-        echo "⚠️ BuildTools a échoué pour $MC_VERSION (cas fréquent pour la 1.7.10)"; \
-        echo ">>> Tentative de récupération via archive alternative..."; \
-        # Fallback : Pour la 1.7.10, on essaie de trouver un JAR déjà compilé (Legacy)
-        # Note : Hub.spigotmc ne permet plus le build 1.7.10, on peut rediriger vers un miroir si tu en as un 
-        # ou simplement expliquer pourquoi cette version spécifique ne peut pas build.
-        exit 1; \
+        # Build normal pour toutes les autres versions
+        java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out && \
+        mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar; \
     fi
 
 FROM base AS spigot
