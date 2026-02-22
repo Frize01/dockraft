@@ -25,34 +25,11 @@ if [ -f "user_jvm_args.txt" ]; then
         exit 1
     fi
 
-    # Map variables d'environnement vers server.properties
-    setprop "server-port" "${SERVER_PORT:-25565}"
-    setprop "motd" "${MOTD}"
-    setprop "max-players" "${MAX_PLAYERS}"
-    setprop "online-mode" "${ONLINE_MODE}"
-    setprop "level-name" "${LEVEL_NAME}"
-    setprop "view-distance" "${VIEW_DISTANCE}"
-    setprop "difficulty" "${DIFFICULTY}"
-    setprop "gamemode" "${GAMEMODE}"
-    setprop "white-list" "${WHITE_LIST}"
-
-
     echo ">>> Démarrage Forge/NeoForge"
     exec java @user_jvm_args.txt @"${UNIX_ARGS}" nogui
 
 # ---- Standard (Vanilla, Paper, Fabric, Spigot, Snapshot) ----
 else
-    # Map variables d'environnement vers server.properties
-    setprop "server-port" "${SERVER_PORT:-25565}"
-    setprop "motd" "${MOTD}"
-    setprop "max-players" "${MAX_PLAYERS}"
-    setprop "online-mode" "${ONLINE_MODE}"
-    setprop "level-name" "${LEVEL_NAME}"
-    setprop "view-distance" "${VIEW_DISTANCE}"
-    setprop "difficulty" "${DIFFICULTY}"
-    setprop "gamemode" "${GAMEMODE}"
-    setprop "white-list" "${WHITE_LIST}"
-
     echo ">>> Démarrage serveur (${MEMORY_MIN} - ${MEMORY_MAX})"
     exec java -Xms${MEMORY_MIN} -Xmx${MEMORY_MAX} -jar server.jar nogui
 fi
