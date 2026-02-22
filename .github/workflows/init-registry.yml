@@ -87,6 +87,76 @@ jobs:
           - { target: "neoforge", mc: "1.20.6",  java: "21" }
           - { target: "fabric",   mc: "1.20.6",  java: "21" }
 
+          - { target: "vanilla",  mc: "1.21.0",  java: "21" }
+          - { target: "spigot",   mc: "1.21.0",  java: "21" }
+          - { target: "paper",    mc: "1.21.0",  java: "21" }
+          - { target: "forge",    mc: "1.21.0",  java: "21" }
+          - { target: "neoforge", mc: "1.21.0",  java: "21" }
+          - { target: "fabric",   mc: "1.21.0",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.1",  java: "21" }
+          - { target: "spigot",   mc: "1.21.1",  java: "21" }
+          - { target: "paper",    mc: "1.21.1",  java: "21" }
+          - { target: "forge",    mc: "1.21.1",  java: "21" }
+          - { target: "neoforge", mc: "1.21.1",  java: "21" }
+          - { target: "fabric",   mc: "1.21.1",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.2",  java: "21" }
+          - { target: "spigot",   mc: "1.21.2",  java: "21" }
+          - { target: "paper",    mc: "1.21.2",  java: "21" }
+          - { target: "forge",    mc: "1.21.2",  java: "21" }
+          - { target: "neoforge", mc: "1.21.2",  java: "21" }
+          - { target: "fabric",   mc: "1.21.2",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.3",  java: "21" }
+          - { target: "spigot",   mc: "1.21.3",  java: "21" }
+          - { target: "paper",    mc: "1.21.3",  java: "21" }
+          - { target: "forge",    mc: "1.21.3",  java: "21" }
+          - { target: "neoforge", mc: "1.21.3",  java: "21" }
+          - { target: "fabric",   mc: "1.21.3",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.4",  java: "21" }
+          - { target: "spigot",   mc: "1.21.4",  java: "21" }
+          - { target: "paper",    mc: "1.21.4",  java: "21" }
+          - { target: "forge",    mc: "1.21.4",  java: "21" }
+          - { target: "neoforge", mc: "1.21.4",  java: "21" }
+          - { target: "fabric",   mc: "1.21.4",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.5",  java: "21" }
+          - { target: "spigot",   mc: "1.21.5",  java: "21" }
+          - { target: "paper",    mc: "1.21.5",  java: "21" }
+          - { target: "forge",    mc: "1.21.5",  java: "21" }
+          - { target: "neoforge", mc: "1.21.5",  java: "21" }
+          - { target: "fabric",   mc: "1.21.5",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.6",  java: "21" }
+          - { target: "spigot",   mc: "1.21.6",  java: "21" }
+          - { target: "paper",    mc: "1.21.6",  java: "21" }
+          - { target: "forge",    mc: "1.21.6",  java: "21" }
+          - { target: "neoforge", mc: "1.21.6",  java: "21" }
+          - { target: "fabric",   mc: "1.21.6",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.7",  java: "21" }
+          - { target: "spigot",   mc: "1.21.7",  java: "21" }
+          - { target: "paper",    mc: "1.21.7",  java: "21" }
+          - { target: "forge",    mc: "1.21.7",  java: "21" }
+          - { target: "neoforge", mc: "1.21.7",  java: "21" }
+          - { target: "fabric",   mc: "1.21.7",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.8",  java: "21" }
+          - { target: "spigot",   mc: "1.21.8",  java: "21" }
+          - { target: "paper",    mc: "1.21.8",  java: "21" }
+          - { target: "forge",    mc: "1.21.8",  java: "21" }
+          - { target: "neoforge", mc: "1.21.8",  java: "21" }
+          - { target: "fabric",   mc: "1.21.8",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.9",  java: "21" }
+          - { target: "spigot",   mc: "1.21.9",  java: "21" }
+          - { target: "paper",    mc: "1.21.9",  java: "21" }
+          - { target: "forge",    mc: "1.21.9",  java: "21" }
+          - { target: "neoforge", mc: "1.21.9",  java: "21" }
+          - { target: "fabric",   mc: "1.21.9",  java: "21" }
+
           - { target: "vanilla",  mc: "1.21.10",  java: "21" }
           - { target: "spigot",   mc: "1.21.10",  java: "21" }
           - { target: "paper",    mc: "1.21.10",  java: "21" }
