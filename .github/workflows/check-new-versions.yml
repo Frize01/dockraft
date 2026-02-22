@@ -68,7 +68,8 @@ jobs:
             fi
           }
 
-          # 2. Snapshot 
+          # 2. Snapshot
+
           OLD_SNAP=$(echo "$OLD_JSON" | jq -r '.snapshot // empty')
           if [ -n "$SNAPSHOT" ] && [ "$SNAPSHOT" != "$OLD_SNAP" ]; then
             MINOR_UPDATES="${MINOR_UPDATES},snapshot"
@@ -118,7 +119,7 @@ jobs:
           MINOR_UPDATES=$(echo "$MINOR_UPDATES" | sed 's/^,//')
 
           echo "Type de mise à jour: $UPDATE_TYPE"
-          
+
           {
             echo "update_type=${UPDATE_TYPE}"
             echo "vanilla=${VANILLA}"
@@ -221,11 +222,11 @@ jobs:
           title: "🔄 Update loaders (Minecraft ${{ steps.check.outputs.vanilla }})"
           body: |
             Des mises à jour ont été détectées et appliquées à `versions.json`.
-            
+
             **Vanilla:** `${{ steps.check.outputs.vanilla }}`
             **Grosse MAJ (Nouveaux):** ${{ steps.check.outputs.changes }}
             **Updates Mineurs:** ${{ steps.check.outputs.minor_updates }}
-            
+
             *📌 Validez cette PR pour indiquer que vos images Docker ont été mises à jour.*
           branch: auto/version-update
           labels: automated,versions
