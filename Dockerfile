@@ -121,7 +121,7 @@ FROM base AS fabric
 COPY --from=download-fabric --chown=mcuser:mcuser /tmp/server.jar .
 
 # ============================================================
-# FORGE (Version ultra-robuste pour l'historique)
+# FORGE
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-forge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
@@ -131,52 +131,38 @@ ARG MC_VERSION=1.21.1
 SHELL ["/bin/bash", "-c"]
 RUN set -euo pipefail; \
     echo ">>> Checking Forge for $MC_VERSION"; \
+    # 1. On récupère la version de Forge
     FORGE_VERSION=$(curl -fsSL https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json \
         | jq -r --arg v "$MC_VERSION" '.promos[$v + "-recommended"] // .promos[$v + "-latest"] // empty'); \
+    [ -n "$FORGE_VERSION" ] || { echo "❌ Forge non dispo"; exit 1; }; \
     \
-    if [ -z "$FORGE_VERSION" ]; then \
-        echo "❌ Forge non dispo pour $MC_VERSION dans les promos, tentative de détection manuelle..."; \
-        # Fallback pour les versions très anciennes non listées dans slim.json
-        FORGE_VERSION=$(curl -fsSL "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml" | grep -oP "<version>${MC_VERSION}-.*?</version>" | sed 's/<[^>]*>//g' | tail -1 | sed "s/${MC_VERSION}-//"); \
+    # 2. On teste les deux formats d'URL possibles (Standard vs Redondant)
+    # Format A (Moderne): MC-FORGE
+    # Format B (Legacy): MC-FORGE-MC
+    URL_BASE="https://maven.minecraftforge.net/net/minecraftforge/forge/${MC_VERSION}-${FORGE_VERSION}" ; \
+    URL_A="${URL_BASE}/forge-${MC_VERSION}-${FORGE_VERSION}-installer.jar" ; \
+    URL_B="${URL_BASE}-${MC_VERSION}/forge-${MC_VERSION}-${FORGE_VERSION}-${MC_VERSION}-installer.jar" ; \
+    \
+    echo ">>> Tentative A: $URL_A"; \
+    if ! curl -fsSL -o /tmp/forge-installer.jar "$URL_A"; then \
+        echo ">>> Tentative B: $URL_B"; \
+        curl -fsSL -o /tmp/forge-installer.jar "$URL_B" || { echo "❌ 404 sur les deux URLs"; exit 1; }; \
     fi; \
     \
-    [ -n "$FORGE_VERSION" ] || { echo "❌ Impossible de trouver une version Forge"; exit 1; }; \
-    echo ">>> Forge version retenue : $FORGE_VERSION"; \
-    \
-    # Création du dossier de travail
+    # 3. Installation
     mkdir -p /tmp/forge-server && cd /tmp/forge-server; \
-    \
-    # TENTATIVE 1 : L'installer standard
-    INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${MC_VERSION}-${FORGE_VERSION}/forge-${MC_VERSION}-${FORGE_VERSION}-installer.jar"; \
-    echo ">>> Tentative Installer : $INSTALLER_URL"; \
-    \
-    if curl -sSL -f -o /tmp/installer.jar "$INSTALLER_URL" && java -jar /tmp/installer.jar --installServer; then \
-        echo "✅ Installation via Installer réussie"; \
+    if java -jar /tmp/forge-installer.jar --installServer; then \
+        echo ">>> Installation OK"; \
     else \
-        echo "⚠️ Installer échoué ou absent, tentative via Universal JAR..."; \
-        # TENTATIVE 2 : Le JAR Universal (pour les versions 1.7.10, 1.8.9, etc.)
-        UNIV_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${MC_VERSION}-${FORGE_VERSION}/forge-${MC_VERSION}-${FORGE_VERSION}-universal.jar"; \
-        if curl -sSL -f -o server.jar "$UNIV_URL"; then \
-            echo "✅ Téléchargement Universal JAR réussi"; \
-        else \
-            # TENTATIVE 3 : Parfois le format est juste MC-VERSION (sans répétition)
-            echo "⚠️ Universal standard échoué, tentative format court..."; \
-            SHORT_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${MC_VERSION}-${FORGE_VERSION}/forge-${FORGE_VERSION}-universal.jar"; \
-            curl -sSL -f -o server.jar "$SHORT_URL" || { echo "❌ Toutes les tentatives de téléchargement ont échoué"; exit 1; }; \
-        fi \
+        # Fallback pour les TRÈS vieilles versions qui n'ont pas d'installer
+        mv /tmp/forge-installer.jar server.jar; \
     fi; \
+    rm -f /tmp/forge-installer.jar; \
     \
-    rm -f /tmp/installer.jar; \
-    \
-    # Gestion finale des fichiers pour l'entrypoint
-    if [ -f run.sh ]; then \
-        chmod +x run.sh; \
-    else \
-        # Si on n'a pas de server.jar (mais des fichiers forge-xxx.jar), on crée le lien
-        if [ ! -f "server.jar" ]; then \
-            FORGE_JAR=$(ls forge-*.jar | grep -v "installer" | head -n 1 || true); \
-            [ -n "$FORGE_JAR" ] && ln -s "$FORGE_JAR" server.jar || { echo "❌ Aucun binaire trouvé"; exit 1; }; \
-        fi \
+    # 4. Finalisation pour ton entrypoint
+    if [ ! -f "run.sh" ] && [ ! -f "server.jar" ]; then \
+        FORGE_JAR=$(ls forge-*.jar | grep -v "installer" | head -n 1 || true); \
+        [ -n "$FORGE_JAR" ] && ln -s "$FORGE_JAR" server.jar; \
     fi; \
     echo ">>> Forge OK"
 
