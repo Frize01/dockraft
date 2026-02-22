@@ -199,7 +199,7 @@ FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
 
 # ============================================================
-# SPIGOT (Version Archive Stable)
+# SPIGOT (Archive Ultime)
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jdk AS download-spigot
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
@@ -211,12 +211,14 @@ RUN mkdir -p /tmp/spigot-build /tmp/spigot-out \
     && curl -sSL -o BuildTools.jar \
         "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" \
     && git config --global --unset core.autocrlf || true \
-    # Logic 1.7.10
     && if [ "$MC_VERSION" = "1.7.10" ]; then \
-        echo ">>> Récupération Spigot 1.7.10 via Maven Central (Stable)..."; \
-        curl -sSL -f -o /tmp/spigot-out/server.jar \
-            "https://oss.sonatype.org/content/repositories/snapshots/org/spigotmc/spigot/1.7.10-R0.1-SNAPSHOT/spigot-1.7.10-R0.1-20141013.210940-104.jar" || \
-        { echo "❌ Impossible de récupérer un JAR valide"; exit 1; }; \
+        echo ">>> Récupération Spigot 1.7.10 via archive alternative..."; \
+        # On tente une URL de secours qui héberge les builds historiques
+        curl -sSL -k -f -o /tmp/spigot-out/server.jar \
+            "https://cdn.getbukkit.org/spigot/spigot-1.7.10-SNAPSHOT-b1657.jar" || \
+        curl -sSL -k -f -o /tmp/spigot-out/server.jar \
+            "https://download.getbukkit.org/spigot/spigot-1.7.10.jar" || \
+        { echo "❌ Aucune archive disponible pour 1.7.10"; exit 1; }; \
     else \
         # Build normal pour 1.8+
         java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out && \
