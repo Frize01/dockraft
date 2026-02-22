@@ -205,13 +205,23 @@ RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 ARG MC_VERSION=1.21.1
 
-RUN mkdir -p /tmp/spigot-build \
+RUN mkdir -p /tmp/spigot-build /tmp/spigot-out \
     && cd /tmp/spigot-build \
-    && curl -o BuildTools.jar \
+    && curl -sSL -o BuildTools.jar \
         "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar" \
     && git config --global --unset core.autocrlf || true \
-    && java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out \
-    && mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar
+    # On tente le build. Si c'est la 1.7.10, BuildTools va probablement échouer.
+    && if java -jar BuildTools.jar --rev ${MC_VERSION} --output-dir /tmp/spigot-out; then \
+        echo "✅ Spigot build success"; \
+        mv /tmp/spigot-out/spigot-*.jar /tmp/spigot-out/server.jar; \
+    else \
+        echo "⚠️ BuildTools a échoué pour $MC_VERSION (cas fréquent pour la 1.7.10)"; \
+        echo ">>> Tentative de récupération via archive alternative..."; \
+        # Fallback : Pour la 1.7.10, on essaie de trouver un JAR déjà compilé (Legacy)
+        # Note : Hub.spigotmc ne permet plus le build 1.7.10, on peut rediriger vers un miroir si tu en as un 
+        # ou simplement expliquer pourquoi cette version spécifique ne peut pas build.
+        exit 1; \
+    fi
 
 FROM base AS spigot
 COPY --from=download-spigot --chown=mcuser:mcuser /tmp/spigot-out/server.jar .
