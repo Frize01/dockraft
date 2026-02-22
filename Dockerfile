@@ -159,47 +159,31 @@ COPY --from=download-forge --chown=mcuser:mcuser /tmp/forge-server .
 # ============================================================
 # NEOFORGE
 # ============================================================
-# ============================================================
-# NEOFORGE
-# ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS download-neoforge
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
-
 ARG MC_VERSION=1.21.1
 
 SHELL ["/bin/bash", "-c"]
 RUN set -euo pipefail; \
-    echo ">>> Checking NeoForge for $MC_VERSION"; \
-    # Nettoyage de la version (ex: 1.20.1 -> 20.1)
     NEO_MC=$(echo "$MC_VERSION" | sed 's/^1\.//'); \
-    # Nouvelle méthode de détection via l'index des versions
     NEO_VERSION=$(curl -sSL "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml" \
-        | jq -R -s -r 'xpath("//version/text()")' 2>/dev/null || \
-        curl -sSL "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml" \
-        | grep -oP "<version>${NEO_MC}\.[0-9.]+</version>" | sed 's/<[^>]*>//g' | tail -1); \
+        | sed 's/<[^>]*>/ /g' | tr ' ' '\n' | grep "^${NEO_MC}\." | tail -1); \
     \
-    [ -n "$NEO_VERSION" ] || { echo "❌ NeoForge pas dispo pour $MC_VERSION"; exit 1; }; \
-    echo ">>> NeoForge version trouvée : $NEO_VERSION"; \
+    [ -n "$NEO_VERSION" ] || { echo "❌ NeoForge non trouvé"; exit 1; }; \
     \
     curl -fLo /tmp/neoforge-installer.jar \
         "https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEO_VERSION}/neoforge-${NEO_VERSION}-installer.jar"; \
     \
     mkdir -p /tmp/neoforge-server && cd /tmp/neoforge-server; \
     java -jar /tmp/neoforge-installer.jar --installServer; \
-    rm -f /tmp/neoforge-installer.jar; \
-    \
-    # Même sécurité que pour Forge pour le run.sh
-    if [ -f run.sh ]; then \
-        chmod +x run.sh; \
-    else \
-        NEO_JAR=$(ls neoforge-*.jar | grep -v "installer" | head -n 1); \
-        [ -n "$NEO_JAR" ] && ln -s "$NEO_JAR" server.jar || echo "⚠️ Pas de JAR trouvé, check run.sh"; \
-    fi; \
-    echo ">>> NeoForge OK"
+    # Sécurité pour les versions de transition (crée un lien server.jar si pas de système d'args)
+    if [ ! -f "user_jvm_args.txt" ] && [ ! -f "run.sh" ]; then \
+        JAR=$(ls neoforge-*.jar | grep -v "installer" | head -n 1); \
+        [ -n "$JAR" ] && ln -s "$JAR" server.jar; \
+    fi
 
 FROM base AS neoforge
 COPY --from=download-neoforge --chown=mcuser:mcuser /tmp/neoforge-server .
-
 # ============================================================
 # SPIGOT
 # ============================================================
