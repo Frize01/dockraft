@@ -11,6 +11,8 @@ jobs:
       max-parallel: 1 # Uncomment to limit parallelism and reduce load on Docker Hub
       matrix:
         include:
+          - { target: "fabric",   mc: "1.18.2",  java: "17" } # TODO: Remove when 1.18.2 is added to the regular build matrix
+
           - { target: "vanilla",  mc: "1.7.10",  java: "8" }
           - { target: "forge",    mc: "1.7.10",  java: "8" }
 
@@ -118,6 +120,7 @@ jobs:
           context: .
           target: ${{ matrix.target }}
           push: true
+          platforms: linux/amd64,linux/arm64
           build-args: |
             MC_VERSION=${{ matrix.mc }}
             JAVA_VERSION=${{ matrix.java }}
