@@ -1,0 +1,127 @@
+name: 📚 Init Registry (Full Historical)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-historical:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - { target: "vanilla",  mc: "1.7.10",  java: "8" }
+          - { target: "forge",    mc: "1.7.10",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.8.9",   java: "8" }
+          - { target: "spigot",   mc: "1.8.8",   java: "8" }
+          - { target: "paper",    mc: "1.8.8",   java: "8" }
+          - { target: "forge",    mc: "1.8.9",   java: "8" }
+
+          - { target: "vanilla", mc: "1.9.4", java: "8" }
+          - { target: "spigot",  mc: "1.9.4", java: "8" }
+          - { target: "paper",   mc: "1.9.4", java: "8" }
+          - { target: "forge",   mc: "1.9.4", java: "8" }
+
+          - { target: "vanilla", mc: "1.10.2", java: "8" }
+          - { target: "spigot",  mc: "1.10.2", java: "8" }
+          - { target: "paper",   mc: "1.10.2", java: "8" }
+          - { target: "forge",   mc: "1.10.2", java: "8" }
+
+          - { target: "vanilla", mc: "1.11.2", java: "8" }
+          - { target: "spigot",  mc: "1.11.2", java: "8" }
+          - { target: "paper",   mc: "1.11.2", java: "8" }
+          - { target: "forge",   mc: "1.11.2", java: "8" }
+
+          - { target: "vanilla",  mc: "1.12.2",  java: "8" }
+          - { target: "spigot",   mc: "1.12.2",  java: "8" }
+          - { target: "paper",    mc: "1.12.2",  java: "8" }
+          - { target: "forge",    mc: "1.12.2",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.13.2",  java: "8" }
+          - { target: "spigot",   mc: "1.13.2",  java: "8" }
+          - { target: "paper",    mc: "1.13.2",  java: "8" }
+          - { target: "forge",    mc: "1.13.2",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.14.4",  java: "8" }
+          - { target: "spigot",   mc: "1.14.4",  java: "8" }
+          - { target: "paper",    mc: "1.14.4",  java: "8" }
+          - { target: "forge",    mc: "1.14.4",  java: "8" }
+          - { target: "fabric",   mc: "1.14.4",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.15.2",  java: "8" }
+          - { target: "spigot",   mc: "1.15.2",  java: "8" }
+          - { target: "paper",    mc: "1.15.2",  java: "8" }
+          - { target: "forge",    mc: "1.15.2",  java: "8" }
+          - { target: "fabric",   mc: "1.15.2",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.16.5",  java: "8" }
+          - { target: "spigot",   mc: "1.16.5",  java: "8" }
+          - { target: "paper",    mc: "1.16.5",  java: "8" }
+          - { target: "forge",    mc: "1.16.5",  java: "8" }
+          - { target: "fabric",   mc: "1.16.5",  java: "8" }
+
+          - { target: "vanilla",  mc: "1.17.1",  java: "17" }
+          - { target: "spigot",   mc: "1.17.1",  java: "17" }
+          - { target: "paper",    mc: "1.17.1",  java: "17" }
+          - { target: "forge",    mc: "1.17.1",  java: "17" }
+          - { target: "fabric",   mc: "1.17.1",  java: "17" }
+
+          - { target: "vanilla",  mc: "1.18.2",  java: "17" }
+          - { target: "spigot",   mc: "1.18.2",  java: "17" }
+          - { target: "paper",    mc: "1.18.2",  java: "17" }
+          - { target: "forge",    mc: "1.18.2",  java: "17" }
+          - { target: "fabric",   mc: "1.18.2",  java: "17" }
+
+          - { target: "vanilla",  mc: "1.19.4",  java: "17" }
+          - { target: "spigot",   mc: "1.19.4",  java: "17" }
+          - { target: "paper",    mc: "1.19.4",  java: "17" }
+          - { target: "forge",    mc: "1.19.4",  java: "17" }
+          - { target: "fabric",   mc: "1.19.4",  java: "17" }
+
+          - { target: "vanilla",  mc: "1.20.6",  java: "21" }
+          - { target: "spigot",   mc: "1.20.6",  java: "21" }
+          - { target: "paper",    mc: "1.20.6",  java: "21" }
+          - { target: "forge",    mc: "1.20.6",  java: "21" }
+          - { target: "neoforge", mc: "1.20.6",  java: "21" }
+          - { target: "fabric",   mc: "1.20.6",  java: "21" }
+
+          - { target: "vanilla",  mc: "1.21.10",  java: "21" }
+          - { target: "spigot",   mc: "1.21.10",  java: "21" }
+          - { target: "paper",    mc: "1.21.10",  java: "21" }
+          - { target: "forge",    mc: "1.21.10",  java: "21" }
+          - { target: "neoforge", mc: "1.21.10",  java: "21" }
+          - { target: "fabric",   mc: "1.21.10",  java: "21" }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run CI Tests
+        run: |
+          chmod +x test.sh
+          ./test.sh "${{ matrix.target }}" "${{ matrix.mc }}" "${{ matrix.java }}"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            MC_VERSION=${{ matrix.mc }}
+            JAVA_VERSION=${{ matrix.java }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/dockraft:${{ matrix.target }}-${{ matrix.mc }}
