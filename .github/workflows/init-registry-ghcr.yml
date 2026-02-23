@@ -1,4 +1,4 @@
-name: 📚 Init Registry (Full Historical)
+name: 📚 Init Registry Github (Full Historical)
 
 on:
   workflow_dispatch:
