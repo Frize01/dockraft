@@ -3,6 +3,8 @@
 
 REPORT="test-results.txt"
 TIMEOUT=120
+RCON_PORT="${RCON_PORT:-25575}"
+RCON_PASSWORD="${RCON_PASSWORD:-testpassword}"
 
 # Format : "target|MC_VERSION|JAVA_VERSION|expect_fail"
 TESTS=(
@@ -26,10 +28,10 @@ TESTS=(
 
 # Reset rapport
 echo "=============================" > "$REPORT"
-echo " DockRaft Test Report" >> "$REPORT"
-echo " $(date)" >> "$REPORT"
+echo " DockRaft Test Report"        >> "$REPORT"
+echo " $(date)"                     >> "$REPORT"
 echo "=============================" >> "$REPORT"
-echo "" >> "$REPORT"
+echo ""                             >> "$REPORT"
 
 PASS=0
 FAIL=0
@@ -49,7 +51,8 @@ for entry in "${TESTS[@]}"; do
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   # === CLEANUP avant chaque test ===
-  docker rm -f "$CONTAINER" 2>/dev/null
+  docker rm -f "$CONTAINER" 2>/dev/null || true
+  docker rmi "mc-test-img" 2>/dev/null || true
 
   # === BUILD ===
   echo "📦 Build..."
@@ -70,18 +73,18 @@ for entry in "${TESTS[@]}"; do
     if [ $BUILD_EXIT -ne 0 ]; then
       echo "✅ Build a FAIL comme prévu"
       echo "--- [$TARGET] MC=$MC_VERSION (EXPECT FAIL) ---" >> "$REPORT"
-      echo "BUILD:   ✅ CORRECTLY FAILED (${BUILD_TIME}s)" >> "$REPORT"
-      echo "ERROR (last 5 lines):" >> "$REPORT"
-      echo "$BUILD_OUTPUT" | tail -5 >> "$REPORT"
-      echo "" >> "$REPORT"
+      echo "BUILD:   ✅ CORRECTLY FAILED (${BUILD_TIME}s)"  >> "$REPORT"
+      echo "ERROR (last 5 lines):"                          >> "$REPORT"
+      echo "$BUILD_OUTPUT" | tail -5                        >> "$REPORT"
+      echo ""                                               >> "$REPORT"
       ((PASS++))
     else
       echo "❌ Build a RÉUSSI alors qu'il devait FAIL"
-      echo "--- [$TARGET] MC=$MC_VERSION (EXPECT FAIL) ---" >> "$REPORT"
-      echo "BUILD:   ❌ SHOULD HAVE FAILED BUT PASSED" >> "$REPORT"
-      echo "" >> "$REPORT"
+      echo "--- [$TARGET] MC=$MC_VERSION (EXPECT FAIL) ---"   >> "$REPORT"
+      echo "BUILD:   ❌ SHOULD HAVE FAILED BUT PASSED"        >> "$REPORT"
+      echo ""                                                  >> "$REPORT"
       ((FAIL++))
-      docker rmi "mc-test-img" 2>/dev/null
+      docker rmi "mc-test-img" 2>/dev/null || true
     fi
     continue
   fi
@@ -89,11 +92,11 @@ for entry in "${TESTS[@]}"; do
   # --- Si on attend un succès mais build fail ---
   if [ $BUILD_EXIT -ne 0 ]; then
     echo "❌ Build FAIL"
-    echo "--- [$TARGET] MC=$MC_VERSION ---" >> "$REPORT"
-    echo "BUILD:   ❌ FAIL (${BUILD_TIME}s)" >> "$REPORT"
-    echo "ERROR (last 10 lines):" >> "$REPORT"
-    echo "$BUILD_OUTPUT" | tail -10 >> "$REPORT"
-    echo "" >> "$REPORT"
+    echo "--- [$TARGET] MC=$MC_VERSION ---"   >> "$REPORT"
+    echo "BUILD:   ❌ FAIL (${BUILD_TIME}s)"  >> "$REPORT"
+    echo "ERROR (last 10 lines):"             >> "$REPORT"
+    echo "$BUILD_OUTPUT" | tail -10           >> "$REPORT"
+    echo ""                                   >> "$REPORT"
     ((FAIL++))
     continue
   fi
@@ -111,12 +114,15 @@ for entry in "${TESTS[@]}"; do
     echo "⚠️  Pas de message EULA détecté"
   fi
 
-  # === RUN AVEC EULA + DIFFICULTY pour test env ===
+  # === RUN AVEC EULA + DIFFICULTY + RCON ===
   echo "🚀 Démarrage serveur..."
   docker run -d --name "$CONTAINER" \
     -e EULA=true \
     -e DIFFICULTY=hard \
+    -e RCON_PORT="$RCON_PORT" \
+    -e RCON_PASSWORD="$RCON_PASSWORD" \
     -p 25565:25565 \
+    -p "${RCON_PORT}:${RCON_PORT}" \
     --memory=2g \
     "mc-test-img" >/dev/null 2>&1
 
@@ -151,7 +157,6 @@ for entry in "${TESTS[@]}"; do
   if $STARTED; then
     echo "✅ Serveur démarré en ${START_DURATION}s"
     START_RESULT="✅ PASS (${START_DURATION}s)"
-    ((PASS++))
   else
     echo "❌ Serveur pas démarré"
     START_RESULT="❌ FAIL (${START_DURATION}s)"
@@ -160,23 +165,23 @@ for entry in "${TESTS[@]}"; do
 
     echo "--- [$TARGET] MC=$MC_VERSION ---" >> "$REPORT"
     echo "BUILD:   ✅ PASS (${BUILD_TIME}s)" >> "$REPORT"
-    echo "EULA:    $EULA_RESULT" >> "$REPORT"
-    echo "START:   $START_RESULT" >> "$REPORT"
-    echo "LOGS:" >> "$REPORT"
-    echo "$LOGS" >> "$REPORT"
-    echo "" >> "$REPORT"
+    echo "EULA:    $EULA_RESULT"             >> "$REPORT"
+    echo "START:   $START_RESULT"            >> "$REPORT"
+    echo "LOGS:"                             >> "$REPORT"
+    echo "$LOGS"                             >> "$REPORT"
+    echo ""                                  >> "$REPORT"
 
-    docker stop "$CONTAINER" >/dev/null 2>&1
-    docker rm -f "$CONTAINER" >/dev/null 2>&1
-    docker rmi "mc-test-img" 2>/dev/null
+    docker stop "$CONTAINER" >/dev/null 2>&1 || true
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    docker rmi "mc-test-img" 2>/dev/null || true
     continue
   fi
 
   # ═══════════════════════════════════════
-  # 4 NOUVEAUX TESTS (serveur running)
+  # TESTS (serveur running)
   # ═══════════════════════════════════════
 
-  # --- TEST 1 : User non-root ---
+  # --- TEST : User non-root ---
   echo "👤 Test user non-root..."
   RUNNING_USER=$(docker exec "$CONTAINER" whoami 2>&1)
   if [ "$RUNNING_USER" != "root" ] && [ -n "$RUNNING_USER" ]; then
@@ -185,9 +190,10 @@ for entry in "${TESTS[@]}"; do
   else
     USER_RESULT="❌ FAIL (user=$RUNNING_USER)"
     echo "❌ Tourne en ROOT !"
+    ((FAIL++))
   fi
 
-  # --- TEST 2 : server.properties respecte les env ---
+  # --- TEST : server.properties respecte les env ---
   echo "⚙️  Test DIFFICULTY=hard dans server.properties..."
   DIFF_LINE=$(docker exec "$CONTAINER" cat /minecraft/server.properties 2>/dev/null | grep "^difficulty=")
   if echo "$DIFF_LINE" | grep -q "difficulty=hard"; then
@@ -196,9 +202,10 @@ for entry in "${TESTS[@]}"; do
   else
     ENV_RESULT="❌ FAIL (got: $DIFF_LINE)"
     echo "❌ Attendu difficulty=hard, trouvé: $DIFF_LINE"
+    ((FAIL++))
   fi
 
-  # --- TEST 3 : Port 25565 écoute ---
+  # --- TEST : Port 25565 écoute ---
   echo "🌐 Test port 25565..."
   if nc -z -w 5 127.0.0.1 25565 2>/dev/null; then
     PORT_RESULT="✅ PASS"
@@ -206,9 +213,27 @@ for entry in "${TESTS[@]}"; do
   else
     PORT_RESULT="❌ FAIL"
     echo "❌ Port 25565 fermé"
+    ((FAIL++))
   fi
 
-  # --- TEST 4 : Graceful shutdown ---
+  # --- TEST : RCON ---
+  echo "🎮 Test RCON..."
+  sleep 2
+  RCON_OUTPUT=$(docker run --rm --network host \
+    "mc-test-img" \
+    rcon-cli --host 127.0.0.1 --port "$RCON_PORT" --password "$RCON_PASSWORD" \
+    list 2>&1) || true
+
+  if echo "$RCON_OUTPUT" | grep -qi "players online"; then
+    RCON_RESULT="✅ PASS"
+    echo "✅ RCON répond : $RCON_OUTPUT"
+  else
+    RCON_RESULT="❌ FAIL ($RCON_OUTPUT)"
+    echo "❌ RCON muet : $RCON_OUTPUT"
+    ((FAIL++))
+  fi
+
+  # --- TEST : Graceful shutdown ---
   echo "🛑 Test graceful shutdown..."
   docker stop -t 30 "$CONTAINER" >/dev/null 2>&1
   EXIT_CODE=$(docker inspect "$CONTAINER" --format='{{.State.ExitCode}}' 2>/dev/null)
@@ -219,35 +244,40 @@ for entry in "${TESTS[@]}"; do
   elif [ "$EXIT_CODE" = "137" ]; then
     GRACEFUL_RESULT="❌ FAIL (exit=137 = SIGKILL)"
     echo "❌ SIGKILL — le serveur n'a pas capté SIGTERM"
+    ((FAIL++))
   else
     GRACEFUL_RESULT="⚠️  UNCLEAR (exit=$EXIT_CODE)"
     echo "⚠️  Exit code: $EXIT_CODE"
   fi
+
+  # Compter ce target comme PASS si le serveur a démarré
+  ((PASS++))
 
   # === ÉCRIRE RAPPORT ===
   LOGS=$(docker logs "$CONTAINER" 2>&1 | tail -5)
 
   echo "--- [$TARGET] MC=$MC_VERSION ---" >> "$REPORT"
   echo "BUILD:     ✅ PASS (${BUILD_TIME}s)" >> "$REPORT"
-  echo "EULA:      $EULA_RESULT" >> "$REPORT"
-  echo "START:     $START_RESULT" >> "$REPORT"
-  echo "USER:      $USER_RESULT" >> "$REPORT"
-  echo "ENV:       $ENV_RESULT" >> "$REPORT"
-  echo "PORT:      $PORT_RESULT" >> "$REPORT"
-  echo "SHUTDOWN:  $GRACEFUL_RESULT" >> "$REPORT"
-  echo "LOGS:" >> "$REPORT"
-  echo "$LOGS" >> "$REPORT"
-  echo "" >> "$REPORT"
+  echo "EULA:      $EULA_RESULT"             >> "$REPORT"
+  echo "START:     $START_RESULT"            >> "$REPORT"
+  echo "USER:      $USER_RESULT"             >> "$REPORT"
+  echo "ENV:       $ENV_RESULT"              >> "$REPORT"
+  echo "PORT:      $PORT_RESULT"             >> "$REPORT"
+  echo "RCON:      $RCON_RESULT"             >> "$REPORT"
+  echo "SHUTDOWN:  $GRACEFUL_RESULT"         >> "$REPORT"
+  echo "LOGS:"                               >> "$REPORT"
+  echo "$LOGS"                               >> "$REPORT"
+  echo ""                                    >> "$REPORT"
 
   # === CLEANUP ===
   echo "🧹 Cleanup..."
-  docker rm -f "$CONTAINER" >/dev/null 2>&1
-  docker rmi "mc-test-img" 2>/dev/null
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  docker rmi "mc-test-img" 2>/dev/null || true
   echo "✅ Nettoyé"
 
 done
 
-# === RÉSUMÉ ===
+# === RÉSUMÉ FINAL ===
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📊 RÉSUMÉ : $PASS/$TOTAL PASS | $FAIL FAIL"

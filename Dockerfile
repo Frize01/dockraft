@@ -5,6 +5,11 @@ ARG JAVA_VERSION=21
 # ============================================================
 FROM eclipse-temurin:${JAVA_VERSION}-jre AS base
 
+# Installer rcon-cli
+ADD --chmod=755 https://github.com/itzg/rcon-cli/releases/download/1.6.9/rcon-cli_1.6.9_linux_amd64.tar.gz /tmp/rcon-cli.tar.gz
+RUN tar -xzf /tmp/rcon-cli.tar.gz -C /usr/local/bin rcon-cli \
+    && rm /tmp/rcon-cli.tar.gz
+
 RUN useradd --create-home --no-log-init mcuser \
     && mkdir -p /minecraft \
     && chown mcuser:mcuser /minecraft
@@ -13,11 +18,15 @@ WORKDIR /minecraft
 
 ENV MEMORY_MIN=1G \
     MEMORY_MAX=2G \
-    EULA=false
+    EULA=false \
+    RCON_PORT=25575
 
 EXPOSE 25565/tcp
 
-# Copier l'entrypoint AVANT de passer en mcuser
+
+EXPOSE 25565/tcp
+EXPOSE 25575/tcp
+
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
 USER mcuser
