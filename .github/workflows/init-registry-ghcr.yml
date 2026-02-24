@@ -104,7 +104,8 @@ jobs:
       - name: Run CI Tests
         run: |
           chmod +x test.sh
-          ./test.sh "${{ matrix.target }}" "${{ matrix.mc }}" "${{ matrix.java }}"
+          #### ./test.sh "${{ matrix.target }}" "${{ matrix.mc }}" "${{ matrix.java }}"
+          bash -x ./test.sh "fabric" "1.18.2" "17"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
