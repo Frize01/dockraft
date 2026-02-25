@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# ---- Fonction sed compatible volumes Docker ----
+safe_sed() {
+    local expression="$1" file="$2"
+    local tmp="${file}.tmp"
+    sed "$expression" "$file" > "$tmp"
+    cat "$tmp" > "$file"
+    rm -f "$tmp"
+}
+
 # ---- EULA ----
 if [ "$EULA" = "true" ]; then
     echo "eula=true" > eula.txt
@@ -12,18 +21,14 @@ fi
 
 # ---- Activer RCON dans server.properties ----
 if [ -f "server.properties" ]; then
-    # Mettre à jour les valeurs existantes
-    sed -i "s/^enable-rcon=.*/enable-rcon=true/" server.properties
-    sed -i "s/^rcon\.port=.*/rcon.port=${RCON_PORT}/" server.properties
-    sed -i "s/^rcon\.password=.*/rcon.password=${RCON_PASSWORD}/" server.properties
+    safe_sed "s/^enable-rcon=.*/enable-rcon=true/" server.properties
+    safe_sed "s/^rcon\.port=.*/rcon.port=${RCON_PORT}/" server.properties
+    safe_sed "s/^rcon\.password=.*/rcon.password=${RCON_PASSWORD}/" server.properties
 
-    # Ajouter si absent
     grep -q "^enable-rcon=" server.properties || echo "enable-rcon=true" >> server.properties
     grep -q "^rcon\.port=" server.properties || echo "rcon.port=${RCON_PORT}" >> server.properties
     grep -q "^rcon\.password=" server.properties || echo "rcon.password=${RCON_PASSWORD}" >> server.properties
 else
-    # Premier lancement — le serveur va générer server.properties
-    # On crée un fichier minimal pour que RCON soit actif dès le départ
     cat > server.properties <<EOF
 enable-rcon=true
 rcon.port=${RCON_PORT}
@@ -38,7 +43,7 @@ apply_prop() {
     local key="$1" value="$2"
     if [ -n "$value" ]; then
         if grep -q "^${key}=" server.properties 2>/dev/null; then
-            sed -i "s/^${key}=.*/${key}=${value}/" server.properties
+            safe_sed "s/^${key}=.*/${key}=${value}/" server.properties
         else
             echo "${key}=${value}" >> server.properties
         fi
@@ -60,8 +65,8 @@ echo ">>> Propriétés appliquées"
 
 # ---- Forge / NeoForge (système @args) ----
 if [ -f "user_jvm_args.txt" ]; then
-    sed -i 's/-Xm[sx][^ ]*//' user_jvm_args.txt
-    sed -i '/^$/d' user_jvm_args.txt
+    safe_sed 's/-Xm[sx][^ ]*//' user_jvm_args.txt
+    safe_sed '/^$/d' user_jvm_args.txt
     echo "-Xms${MEMORY_MIN}" >> user_jvm_args.txt
     echo "-Xmx${MEMORY_MAX}" >> user_jvm_args.txt
 
