@@ -1,9 +1,9 @@
 {
-  "vanilla": "1.21.3",
-  "snapshot": "25w06a",
+  "vanilla": "26.1.2",
+  "snapshot": "26.2-snapshot-5",
   "paper": "1.21.3-build.10",
-  "fabric": "1.21.3-loader.0.15.0",
-  "forge": "1.21.3-52.0.0",
+  "fabric": "26.1.2-loader.0.19.2",
+  "forge": "64.0.6",
   "neoforge": "21.3.1",
-  "spigot": "1.21.3-1234abc"
+  "spigot": "26.1.2-566f972"
 }
