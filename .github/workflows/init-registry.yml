@@ -72,7 +72,7 @@ jobs:
           # - { target: "spigot",   mc: "1.18.2",  java: "17" }
           # - { target: "paper",    mc: "1.18.2",  java: "17" }
           # - { target: "forge",    mc: "1.18.2",  java: "17" }
-          - { target: "fabric",   mc: "1.18.2",  java: "17" }
+          # - { target: "fabric",   mc: "1.18.2",  java: "17" }
 
           # - { target: "vanilla",  mc: "1.19.4",  java: "17" }
           # - { target: "spigot",   mc: "1.19.4",  java: "17" }
@@ -92,7 +92,7 @@ jobs:
           # - { target: "paper",    mc: "1.21.10",  java: "21" }
           # - { target: "forge",    mc: "1.21.10",  java: "21" }
           # - { target: "neoforge", mc: "1.21.10",  java: "21" }
-           - { target: "fabric",   mc: "1.21.11",  java: "21" }
+          - { target: "fabric",   mc: "1.21.11",  java: "21" }
 
     steps:
       - name: Checkout
