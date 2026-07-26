@@ -92,7 +92,7 @@ jobs:
           # - { target: "paper",    mc: "1.21.10",  java: "21" }
           # - { target: "forge",    mc: "1.21.10",  java: "21" }
           # - { target: "neoforge", mc: "1.21.10",  java: "21" }
-          # - { target: "fabric",   mc: "1.21.10",  java: "21" }
+           - { target: "fabric",   mc: "1.21.11",  java: "21" }
 
     steps:
       - name: Checkout
